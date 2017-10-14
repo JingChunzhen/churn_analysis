@@ -15,8 +15,8 @@ def raw_data_op_preprocessing(file_in, file_out):
     将数据分为第一天流失和非流失，第二天，，，一直到第三天
     可反复调用load函数来获取上述自然天的流失训练数据tfidf和标签
     Args:
-        file_in (string): database path 
-        file_out (list): pathes head for training data and labels 
+        file_in (string): database path
+        file_out (list): pathes head for training data and labels
     '''
     conn = sqlite3.connect(file_in)
     c = conn.cursor()
@@ -83,99 +83,137 @@ def raw_data_op_preprocessing(file_in, file_out):
         pickle.dump(tc_labels, f_tc_label)
     pass
 
+'''
+CREATE TABLE maidian (ObjectID INTEGER PRIMARY KEY, riqi INTEGER, user_id INTEGER,\
+    action TEXT, zhanli INTEGER, dengji INTEGER, jinbi INTEGER, zuanshi INTEGER, heizuan INTEGER,\
+    tili INTEGER, ip TEXT, vip TEXT, xitong TEXT, qudao INTEGER, num_days_played INTEGER, current_day INTEGER, \
+    relative_timestamp REAL);
+'''
 
-def raw_data_additional_features_preprocessing(file_in):
+class Additional_Features_Extractor(object):
     '''
-    统计除动作信息之外的其余信息
-    包括动作之间的时间间隔（衡量动作之间的连贯性），等级，金币，黑钻，钻石，体力的增长速度，
-    同时也应该包括动作的种类（即玩家在这一个自然天玩了多少种动作）
-    上述的统计同样也是以天为单位进行    
-    如果上述进行的较好， 或者达到了一定的效果，可以结合之前的动作信息作为特征继续进行分类，以观察最终的效果
+    处理埋点数据中除动作特征之外的其余特征，如金币，钻石等
+    TODO: 暂未实现记录玩家在一个自然天玩的总时长
     '''
-    conn = sqlite3.connect(file_in)
-    c = conn.cursor()
-    '''
-    CREATE TABLE maidian (ObjectID INTEGER PRIMARY KEY, riqi INTEGER, user_id INTEGER,\
-     action TEXT, zhanli INTEGER, dengji INTEGER, jinbi INTEGER, zuanshi INTEGER, heizuan INTEGER,\
-      tili INTEGER, ip TEXT, vip TEXT, xitong TEXT, qudao INTEGER, num_days_played INTEGER, current_day INTEGER, \
-      relative_timestamp REAL);
-    '''
-    query_sql = "SELECT user_id, action, zhanli, dengji, jinbi, zuanshi, heizuan, tili, \
-        num_days_played, current_day, relative_timestamp FROM maidian ORDER BY user_id, relative_timestamp"
-    
 
-    fc_user = []
-    sc_user = []
-    tc_user = []
-
-    previous_userid = None
-    previous_times = [None] * 7
-    previous_features = [None] * 7
-    times = [None] * 7
-    features = [None] * 7 # TODO
-    feature_matrix = [[], [], [], [], [], []], []] 
-    op_categories = set()
-    for row in c.execute(query_sql):
-        user_id = row[0]                
-        features = [row[i + 1] for i in range(7)]
-        # 0 action 1 zhanli 2 dengji 3 jinbi 4 zuanshi 5 heizuan 6 tili         
-        num_days_played = row[8]
-        current_day = row[9]
-        relative_timestamp = row[10]
-
-        # 是否需要更换user_id 
-        if current_day == 1:
-            # 存储标签
-            fc_user[user_id] = 1 if num_days_played == 1 else 0
-            # 获得特征数据 
-            for i in range(7): #只从除op以外的动作开始进行循环
-                if i == 0:
-                    # 处理动作特征
-                    if previous_features[0] != features[0]:
-                        op_categories.add(features[0]) # 记录该用户的动作种类个数
-                        previous_features[0] = features[0]                
-                        times_interval = relative_timestamp - previous_times[0]
-                        # TODO 将interval append入一个矩阵列表当中
-                        feature_matrix[0].append(times_interval)
-                        previous_times[0] = relative_timestamp
-                    else:
-                        pass                    
-                elif features[i] != previous_features[i]:
-                    # 处理其余特征
-                    features_diff = features[i] - previous_features[i]
-                    times_diff = relative_timestamp - previous_times[i]         
-                    derivative = features_diff * 1.0 / times_diff
-                    # TODO 将derivative append入一个矩阵列表当中
-                    feature_matrix[i].append(derivative)
-                    previous_features[i] = features[i]           
-                    previous_times[i] = relative_timestamp
-                    pass
-                else:
-                    pass
-                pass
-            if user_id not in fc_user_op:
-                fc_user_op[user_id] = []
-            fc_user_op[user_id].append(action)
-
-
-        elif current_day == 2:
-            sc_user[user_id] = 1 if num_days_played == 2 else 0
-            if user_id not in sc_user_op:
-                sc_user_op[user_id] = []
-            sc_user_op[user_id].append(action)
-        elif current_day == 3:
-            tc_user[user_id] = 1 if num_days_played == 3 else 0
-            if user_id not in tc_user_op:
-                tc_user_op[user_id] = []
-            tc_user_op[user_id].append(action)
-        else:
-            pass         
-
-
+    def __init__(self, file_in, file_out):
+        '''
+        只存放全局变量
+        '''
+        self.previous_times = [None] * 7
+        self.previous_features = [None] * 7
+        self.features = [None] * 7  # TODO
+        self.feature_matrix = [[], [], [], [], [], [], []]
+        self.op_categories = set()
+        self.relative_timestamp = None
         pass
 
+    def features_update():
+        for i in range(7):  # 只从除op以外的动作开始进行循环
+            if i == 0:
+                # 处理动作特征 index 0
+                if self.previous_features[0] != self.features[0]:
+                    self.op_categories.add(self.features[0])
+                    # 记录该用户的动作种类个数 op_categories 做为一个单独的特征不在features_matrix中记录
+                    times_interval = self.relative_timestamp - \
+                        self.previous_times[0]
+                    self.feature_matrix[0].append(times_interval)
+                    # update
+                    self.previous_features[0] = self.features[0]
+                    self.previous_times[0] = self.relative_timestamp
+                else:
+                    pass
+            elif self.features[i] != self.previous_features[i]:
+                # 处理其余特征 index 1 -> 6
+                features_diff = self.features[i] - self.previous_features[i]
+                times_diff = self.relative_timestamp - self.previous_times[i]
+                derivative = features_diff * 1.0 / times_diff
+                # TODO 将derivative append入一个矩阵列表当中，应该注意的问题是，可能求到的数字过小
+                self.feature_matrix[i].append(derivative)
+                # update
+                self.previous_features[i] = self.features[i]
+                self.previous_times[i] = self.relative_timestamp
+            else:
+                pass
+        pass
+
+    def additional_features_preprocessing():
+        conn = sqlite3.connect(file_in)
+        c = conn.cursor()
+        query_sql = "SELECT user_id, action, zhanli, dengji, jinbi, zuanshi, heizuan, tili, \
+        num_days_played, current_day, relative_timestamp FROM maidian ORDER BY user_id, relative_timestamp"
+        for row in c.execute(query_sql):
+            user_id = row[0]
+            self.features = [row[i + 1] for i in range(7)]
+            # 0 action 1 zhanli 2 dengji 3 jinbi 4 zuanshi 5 heizuan 6 tili
+            num_days_played = row[8]
+            current_day = row[9]
+            self.relative_timestamp = row[10]
+
+            # 是否需要更换user_id
+            if user_id == previous_userid and previous_day == current_day:
+                if current_day == 1:
+                    # 存储标签
+                    fc_user[user_id] = 1 if num_days_played == 1 else 0
+                    self.features_update()
+                elif current_day == 2:
+                    sc_user[user_id] = 1 if num_days_played == 2 else 0
+                    self.features_update()
+                elif current_day == 3:
+                    tc_user[user_id] = 1 if num_days_played == 3 else 0
+                    self.features_update()
+                else:
+                    pass                
+                # update user_id
+                # update current_day
+            else:
+                # if previous_userid != user_id or previous_day !=current_day
+                # 并初始化一些数据
+                # 进行信息存储,相应的更新操作
+                final_features = [len(self.op_categories)]
+                final_features.extend(
+                    [np.mean(self.feature_matrix[i]) for i in range(1, 7)])
+                if previous_day == 1:
+                    if previous_userid not in fc_user_features:
+                        # if 条件的加入是为了增强程序的鲁棒性
+                        fc_user_features[previous_userid] = final_features
+
+                elif previous_day == 2:
+                    if previous_userid not in sc_user_features:
+                        sc_user_features[previous_userid] = final_features
+
+                elif previous_day == 3:
+                    if previous_userid not in tc_user_features:
+                        tc_user_features[previous_userid] = final_features
+
+                else:
+                    pass
+
+                # 特征数据初始化，全局变量初始化
+                self.feature_matrix = [[], [], [], [], [], []], []]
+                [self.previous_features[i] = self.features[i] for i in range(7)]
+                [self.previous_times[i] = self.relative_timestamp for i in range(7)]
+                previous_userid = user_id # TODO：bug here 有两个全部发生了变化，也有可能是只有一个发生了变化
+                previous_day = current_day
+                self.op_categories.clear()
+                pass
+            pass
     pass
 
+def op_features_extract():
+    '''
+    剔除不常用的动作信息，将XGBoost的效果调至最优之后，提取关键动作信息
+    同时这里还可以使用随机森林来共同提取，并使用关联规则进行验证
+    '''
+    pass
+
+def features_merge(file_in, file_out):
+    '''
+    动作信息由XGBoost提取出来之后
+    提取出来的动作进行TF-IDF处理，结合其余的特征，得到新的特征
+    作为数据的标签,其实两个文件都进行了数据的标签的处理，这里可以之选取其中的一个，来进行
+    '''
+    pass
 
 def load(file_in, method='tfidf', sample_rate=0, support=5):
     '''
@@ -292,7 +330,7 @@ def function_name(file_in):
     x, y, op = load(file_in)
     churn_counts = [[], []]  # index 0 for unchurn user 1 for churn user
     [churn_counts[y[i]].append(
-        sum(list(map(lambda n:0 if n == 0 else 1, x[i])))) for i in range(np.shape(x)[0])]  # 验证本行代码
+        sum(list(map(lambda n: 0 if n == 0 else 1, x[i])))) for i in range(np.shape(x)[0])]
 
     print(np.shape(x))  # (17965, 2069)
     print(len(churn_counts[0]))  # -> 7142
