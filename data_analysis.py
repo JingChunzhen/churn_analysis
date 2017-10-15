@@ -5,7 +5,64 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 
+class Base_Feature_Extractor(object):
+    '''
+    '''
 
+    def write(file_in, file_out):
+        '''
+        '''        
+        
+        pass
+    pass
+
+class Action_Feature_Extractor(object):
+    '''
+    考虑如果数据量太大，可以给动作进行编码，已节省内存
+    但相应的需要存储动作编码和动作字符串之间的映射
+    '''
+
+    def __init__(file_in, file_out):
+        self.fc_user_ops = {}
+        self.sc_user_ops = {}
+        self.tc_user_ops = {}
+        self.fc_user_label = {}
+        self.sc_user_label = {}
+        self.tc_user_label = {}        
+        pass
+    
+    def action_features_preprocess():
+        '''
+        '''
+        conn = sqlite3.connect(file_in)
+        c = conn.cursor()
+        query_sql = "SELECT user_id, action, num_days_played, current_day FROM maidian ORDER BY \
+                    user_id, relative_timestamp ASC"
+        for row in c.execute(query_sql):
+            user_id = row[0]
+            action = row[1]
+            num_days_played = row[2]
+            current_day = row[3]
+            if current_day == 1:
+                self.fc_user_label[user_id] = 1 if num_days_played == 1 else 0
+                if user_id not in self.fc_user_ops:
+                    self.fc_user_ops[user_id] = []
+                self.fc_user_ops[user_id].append(action)
+            elif current_day == 2:
+                self.sc_user_label[user_id] = 1 if num_days_played == 2 else 0
+                if user_id not in self.sc_user_ops:
+                    self.sc_user_ops[user_id] = []
+                self.sc_user_ops[user_id].append(action)
+            elif current_day == 3:
+                self.tc_user_label[user_id] = 1 if num_days_played == 3 else 0
+                if user_id not in self.tc_user_ops:
+                    self.tc_user_ops[user_id] = []
+                self.tc_user_ops[user_id].append(action)
+            else:
+                pass
+            pass
+
+    pass
 def raw_data_op_preprocessing(file_in, file_out):
     '''
     TODO: 1.VIP用户流失较少 由得到的动作信息重要性来看并无明显关联
@@ -79,9 +136,10 @@ def raw_data_op_preprocessing(file_in, file_out):
             tc_labels.append(tc_user[user])
 
         pickle.dump(fc_labels, f_fc_label)
-        pickle.dump(sc_labels, f_sc_label)yingwen
+        pickle.dump(sc_labels, f_sc_label)
         pickle.dump(tc_labels, f_tc_label)
     pass
+
 
 '''
 CREATE TABLE maidian (ObjectID INTEGER PRIMARY KEY, riqi INTEGER, user_id INTEGER,\
@@ -89,6 +147,7 @@ CREATE TABLE maidian (ObjectID INTEGER PRIMARY KEY, riqi INTEGER, user_id INTEGE
     tili INTEGER, ip TEXT, vip TEXT, xitong TEXT, qudao INTEGER, num_days_played INTEGER, current_day INTEGER, \
     relative_timestamp REAL);
 '''
+
 
 class Additional_Features_Extractor(object):
     '''
@@ -106,6 +165,12 @@ class Additional_Features_Extractor(object):
         self.feature_matrix = [[], [], [], [], [], [], []]
         self.op_categories = set()
         self.relative_timestamp = None
+        self.fc_user_features = {}
+        self.sc_user_features = {}
+        self.tc_user_features = {}
+        self.fc_user_label = {}
+        self.sc_user_label = {}
+        self.tc_user_label = {}
         pass
 
     def features_update():
@@ -137,7 +202,7 @@ class Additional_Features_Extractor(object):
                 pass
         pass
 
-    def additional_features_preprocessing():
+    def additional_features_preprocess():
         conn = sqlite3.connect(file_in)
         c = conn.cursor()
         query_sql = "SELECT user_id, action, zhanli, dengji, jinbi, zuanshi, heizuan, tili, \
@@ -149,47 +214,37 @@ class Additional_Features_Extractor(object):
             num_days_played = row[8]
             current_day = row[9]
             self.relative_timestamp = row[10]
-
-            # 是否需要更换user_id
+            
             if user_id == previous_userid and previous_day == current_day:
                 if current_day == 1:
                     # 存储标签
-                    fc_user[user_id] = 1 if num_days_played == 1 else 0
+                    fc_user_label[user_id] = 1 if num_days_played == 1 else 0
                     self.features_update()
                 elif current_day == 2:
-                    sc_user[user_id] = 1 if num_days_played == 2 else 0
+                    sc_user_label[user_id] = 1 if num_days_played == 2 else 0
                     self.features_update()
                 elif current_day == 3:
-                    tc_user[user_id] = 1 if num_days_played == 3 else 0
+                    tc_user_label[user_id] = 1 if num_days_played == 3 else 0
                     self.features_update()
                 else:
                     pass                
-                # update user_id
-                # update current_day
             else:
-                # if previous_userid != user_id or previous_day !=current_day
-                # 并初始化一些数据
-                # 进行信息存储,相应的更新操作
-                final_features = [len(self.op_categories)]
-                final_features.extend(
+                user_features = [len(self.op_categories)]
+                user_features.extend(
                     [np.mean(self.feature_matrix[i]) for i in range(1, 7)])
                 if previous_day == 1:
-                    if previous_userid not in fc_user_features:
+                    if previous_userid not in self.fc_user_features:
                         # if 条件的加入是为了增强程序的鲁棒性
-                        fc_user_features[previous_userid] = final_features
-
+                        self.fc_user_features[previous_userid] = user_features
                 elif previous_day == 2:
-                    if previous_userid not in sc_user_features:
-                        sc_user_features[previous_userid] = final_features
-
+                    if previous_userid not in self.sc_user_features:
+                        self.sc_user_features[previous_userid] = user_features
                 elif previous_day == 3:
-                    if previous_userid not in tc_user_features:
-                        tc_user_features[previous_userid] = final_features
-
+                    if previous_userid not in self.tc_user_features:
+                        self.tc_user_features[previous_userid] = user_features
                 else:
                     pass
-
-                # 特征数据初始化，全局变量初始化
+                
                 self.feature_matrix = [[], [], [], [], [], []], []]
                 [self.previous_features[i] = self.features[i] for i in range(7)]
                 [self.previous_times[i] = self.relative_timestamp for i in range(7)]
@@ -199,6 +254,8 @@ class Additional_Features_Extractor(object):
                 pass
             pass
     pass
+
+
 
 def op_features_extract():
     '''
@@ -282,22 +339,22 @@ def load(file_in, method='tfidf', sample_rate=0, support=5):
         X = vectorizer.fit_transform(
             new_corpus).toarray()  # 该步骤仅仅取得了动作的计数而不是比值的大小
     if method.lower() == 'tf':
-        X = vectorizer.fit_transform(new_corpus).toarray()
+        X=vectorizer.fit_transform(new_corpus).toarray()
         for i in range(np.shape(X)[0]):
-            s = sum(list(X[i]))
+            s=sum(list(X[i]))
             for j in range(np.shape(X)[1]):
-                X[i][j] = X[i][j] * 1.0 / s
+                X[i][j]=X[i][j] * 1.0 / s
                 if X[i][j] != 0:
                     print(X[i][j])
         print(X)
 
     elif method.lower() == 'tfidf':
-        transformer = TfidfTransformer()
-        tfidf = transformer.fit_transform(vectorizer.fit_transform(new_corpus))
-        X = tfidf.toarray()
+        transformer=TfidfTransformer()
+        tfidf=transformer.fit_transform(vectorizer.fit_transform(new_corpus))
+        X=tfidf.toarray()
 
-    Y = new_labels
-    op = vectorizer.get_feature_names()
+    Y=new_labels
+    op=vectorizer.get_feature_names()
 
     return X, Y, op
 
@@ -307,16 +364,16 @@ def excel_parse():
     提取相关的动作信息和动作的详细说明信息
     '''
     import xlrd
-    data = xlrd.open_workbook('./data/狂暴之翼.xlsx')
-    table = data.sheet_by_name('actions_index')
+    data=xlrd.open_workbook('./data/狂暴之翼.xlsx')
+    table=data.sheet_by_name('actions_index')
 
-    nrows = table.nrows
-    op_verbose = {}
+    nrows=table.nrows
+    op_verbose={}
 
     for i in range(nrows):
-        verbose = table.row_values(i)
+        verbose=table.row_values(i)
         if verbose[0] not in op_verbose:
-            op_verbose[verbose[0]] = ' '.join(verbose[1:])
+            op_verbose[verbose[0]]=' '.join(verbose[1:])
 
     return op_verbose
 
@@ -327,8 +384,8 @@ def function_name(file_in):
     '''
     分析数据的种类，观察以自然天进行分割的方法是否降低了流失和非流失用户的动作种类差别
     '''
-    x, y, op = load(file_in)
-    churn_counts = [[], []]  # index 0 for unchurn user 1 for churn user
+    x, y, op=load(file_in)
+    churn_counts=[[], []]  # index 0 for unchurn user 1 for churn user
     [churn_counts[y[i]].append(
         sum(list(map(lambda n: 0 if n == 0 else 1, x[i])))) for i in range(np.shape(x)[0])]
 
