@@ -4,6 +4,7 @@ import random
 import numpy as np
 import pandas as pd
 import sklearn
+import sys
 from sklearn import preprocessing
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 
@@ -25,9 +26,12 @@ class Base_Feature_Extractor(object):
 
         -> 在动作特征的处理中，考虑到数据量太大，可以给动作进行编码，以节省内存，但需要相应的存储动作编码和动作字符串之间的映射
             在载入特征时，需要剔除不常用动作
-        -> 在其余特征（如金币，钻石等）的处理中，暂未考虑到玩家在某天玩游戏的总时长信息
+        -> 在其余特征（如金币，钻石等）的处理中
             目前只考虑到了玩家动作的种类，玩家动作的连贯性（玩家动作之间的时间间隔），战力，等级，金币，钻石，黑钻，体力等的成长速度
             以他们的均值作为该玩家的特征
+        -> 还应该将玩家在一个自然天中最多攒了多少金币，钻石，黑钻，战力等信息纳入考虑范围，由XGBoost进行提取关键的指标
+        -> 以及上述指标的最小值，由此一并进入XGBoost进行重要特征的提取
+        -> 以及上述指标的变化次数，变化次数反映了玩家在游戏中的活跃程度
         -> 在其余特征的处理中，只遍历一次可将用户特征以天分割，并得到原始数据的派生属性
         '''
         pass
@@ -52,6 +56,8 @@ class Action_Feature_Extractor(Base_Feature_Extractor):
         self.fc_user_label = {}
         self.sc_user_label = {}
         self.tc_user_label = {}
+        self.action_id = {}
+        # 保存动作信息和标号之间的映射关系，以节省内存
         self.file_in = file_in
         pass
 
@@ -60,32 +66,38 @@ class Action_Feature_Extractor(Base_Feature_Extractor):
         c = conn.cursor()
         query_sql = "SELECT user_id, action, num_days_played, current_day FROM maidian ORDER BY \
                     user_id, relative_timestamp ASC"
+        actionid = 0
         for row in c.execute(query_sql):
             user_id = row[0]
             action = row[1]
+
+            if action not in self.action_id:
+                self.action_id[action] = str(actionid)  # 将这个地方进行字符转换
+                actionid += 1
+
             num_days_played = row[2]
             current_day = row[3]
             if current_day == 1:
                 self.fc_user_label[user_id] = 1 if num_days_played == 1 else 0
                 if user_id not in self.fc_user_ops:
                     self.fc_user_ops[user_id] = []
-                self.fc_user_ops[user_id].append(action)
+                self.fc_user_ops[user_id].append(self.action_id[action])
             elif current_day == 2:
                 self.sc_user_label[user_id] = 1 if num_days_played == 2 else 0
                 if user_id not in self.sc_user_ops:
                     self.sc_user_ops[user_id] = []
-                self.sc_user_ops[user_id].append(action)
+                self.sc_user_ops[user_id].append(self.action_id[action])
             elif current_day == 3:
                 self.tc_user_label[user_id] = 1 if num_days_played == 3 else 0
                 if user_id not in self.tc_user_ops:
                     self.tc_user_ops[user_id] = []
-                self.tc_user_ops[user_id].append(action)
+                self.tc_user_ops[user_id].append(self.action_id[action])
             else:
                 pass
             pass
     pass
 
-    def write(self, file_out):
+    def write_in(self, file_out):
         with open(file_out[0], 'a') as f_fc_train, open(file_out[1], 'a') as f_sc_train, open(file_out[2], 'a') as f_tc_train, \
                 open(file_out[3], 'wb') as f_fc_label, open(file_out[4], 'wb') as f_sc_label, open(file_out[5], 'wb') as f_tc_label:
             fc_labels = []
@@ -108,6 +120,19 @@ class Action_Feature_Extractor(Base_Feature_Extractor):
             pickle.dump(sc_labels, f_sc_label)
             pickle.dump(tc_labels, f_tc_label)
 
+    def write(self, file_out):
+        with open(file_out[0], 'wb') as f_fc_train, open(file_out[1], 'wb') as f_sc_train, open(file_out[2], 'wb') as f_tc_train, \
+                open(file_out[3], 'wb') as f_fc_label, open(file_out[4], 'wb') as f_sc_label, open(file_out[5], 'wb') as f_tc_label, \
+                open(file_out[6], 'wb') as f_action_id:
+            pickle.dump(self.fc_user_ops, f_fc_train)
+            pickle.dump(self.sc_user_ops, f_sc_train)
+            pickle.dump(self.tc_user_ops, f_tc_train)
+            pickle.dump(self.fc_user_label, f_fc_label)
+            pickle.dump(self.sc_user_label, f_sc_label)
+            pickle.dump(self.tc_user_label, f_tc_label)
+            pickle.dump(self.action_id, f_action_id)
+        pass
+
     def load(self, file_in, method='tfidf', sample_rate=0, minimum_support=5):
         '''
         Args:
@@ -126,7 +151,7 @@ class Action_Feature_Extractor(Base_Feature_Extractor):
         op_counts = {}
 
         with open(file_in[0], 'rb') as f_train:
-            for line in f_train:                
+            for line in f_train:
                 ops = set(line.decode('utf-8').strip().split(' '))
                 for op in ops:
                     if op not in op_counts:
@@ -183,11 +208,11 @@ class Action_Feature_Extractor(Base_Feature_Extractor):
 class Additional_Features_Extractor(Base_Feature_Extractor):
 
     def __init__(self, file_in):
-        self.previous_times = [None] * 8 
+        self.previous_times = [None] * 8
         # 最后一个previous_times用来求最终的时间
         self.previous_features = [None] * 7
         self.features = [None] * 7  # TODO
-        self.feature_matrix = [[], [], [], [], [], [], [], []] 
+        self.feature_matrix = [[], [], [], [], [], [], [], []]
         # 最后一个应该是最重要的，表示的是玩家在某一天玩的总时长
         self.op_categories = set()
         self.relative_timestamp = None
@@ -197,6 +222,10 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
         self.fc_user_label = {}
         self.sc_user_label = {}
         self.tc_user_label = {}
+        self.max_features = [0] * 6  # 除动作之外的其余指标
+        # 1 zhanli 2 dengji 3 jinbi 4 zuanshi 5 heizuan 6 tili 下同
+        self.min_features = [sys.maxsize] * 6
+        self.features_change_times = [0] * 6
         self.file_in = file_in
         pass
 
@@ -211,6 +240,7 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
             self.previous_times[0] = self.relative_timestamp
         else:
             pass
+
         for i in range(1, 7):  # 只从除op以外的动作开始进行循环
             if self.features[i] != self.previous_features[i]:
                 # 处理其余特征 index 1 -> 6
@@ -223,6 +253,13 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
                         self.feature_matrix[i].append(-1 * derivative)
                     else:
                         self.feature_matrix[i].append(derivative)
+
+                # 记录最大，最小，以及变化次数
+                if self.features[i] > self.max_features[i - 1]:
+                    self.max_features[i - 1] = self.features[i]
+                if self.features[i] < self.min_features[i - 1]:
+                    self.min_features[i - 1] = self.features[i]
+                self.features_change_times[i - 1] += 1
                 # update
                 self.previous_features[i] = self.features[i]
                 self.previous_times[i] = self.relative_timestamp
@@ -236,7 +273,7 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
             num_days_played, current_day, relative_timestamp FROM maidian ORDER BY user_id, relative_timestamp"
 
         previous_day = None
-        previous_userid = None        
+        previous_userid = None
         test_c = 0
         for row in c.execute(query_sql):
             user_id = row[0]
@@ -253,47 +290,67 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
                 previous_day = current_day
                 previous_userid = user_id
 
-            elif user_id == previous_userid and previous_day == current_day:                
+            elif user_id == previous_userid and previous_day == current_day:
                 self.features_update()
             else:
-                
+
                 self.feature_matrix[7].append(self.previous_times[7])
                 user_features = [len(self.op_categories)]
                 user_features.append(np.max(self.feature_matrix[0]) if len(
                     self.feature_matrix[0]) != 0 else 0)
                 for i in range(7):
                     user_features.append(np.nanmean(self.feature_matrix[i]) if len(
-                        self.feature_matrix[i]) != 0 else 0)
-
+                        self.feature_matrix[i]) != 0 else 0)                          
+                
+                for value in self.max_features:
+                    user_features.append(value)
+                for value in self.min_features:
+                    user_features.append(value)
+                for value in self.features_change_times:
+                    user_features.append(value)      
+                
+                # 0 op_categories
+                # 1 动作的最大时间间隔
+                # 2 3 4 5 6 7 8 动作平均间隔， 战力， 等级， 金币， 钻石，黑钻，体力平均增长速度
+                # 由XGB提取出钻石平均增长速度是一个重要指标
+                # 新增特征加入
                 if previous_day == 1:
-                    self.fc_user_label[previous_userid] = 1 if num_days_played == 1 else 0      
-                    user_features.append(self.feature_matrix[7][0])  # 在一个自然天玩的总时长 应该是在append之后的事情
+                    self.fc_user_label[previous_userid] = 1 if num_days_played == 1 else 0
+                    # 在一个自然天玩的总时长 应该是在append之后的事情
+                    user_features.append(self.feature_matrix[7][0])
                     self.fc_user_features[previous_userid] = user_features
+                    print(len(self.fc_user_features[previous_userid]))
                 elif previous_day == 2:
-                    self.sc_user_label[previous_userid] = 1 if num_days_played == 2 else 0                    
-                    user_features.append(self.feature_matrix[7][-1] - self.feature_matrix[7][-2])
+                    self.sc_user_label[previous_userid] = 1 if num_days_played == 2 else 0
+                    user_features.append(
+                        self.feature_matrix[7][-1] - self.feature_matrix[7][-2])
                     self.sc_user_features[previous_userid] = user_features
                 elif previous_day == 3:
-                    self.tc_user_label[previous_userid] = 1 if num_days_played == 3 else 0         
-                    user_features.append(self.feature_matrix[7][-1] - self.feature_matrix[7][-2])           
+                    self.tc_user_label[previous_userid] = 1 if num_days_played == 3 else 0
+                    user_features.append(
+                        self.feature_matrix[7][-1] - self.feature_matrix[7][-2])
                     self.tc_user_features[previous_userid] = user_features
                 else:
                     pass
 
-                if user_id == previous_userid:                    
+                if user_id == previous_userid:
                     for i in range(7):
-                        self.feature_matrix[i] = []                    
+                        self.feature_matrix[i] = []
                 else:
                     self.feature_matrix = [[], [], [], [], [], [], [], []]
 
                 for i in range(7):
                     self.previous_features[i] = self.features[i]
                     self.previous_times[i] = self.relative_timestamp
-                self.previous_times[7] = self.relative_timestamp # 更新操作
+                self.previous_times[7] = self.relative_timestamp  # 更新操作
                 previous_userid = user_id  # TODO
                 previous_day = current_day
                 self.op_categories.clear()
-            # test_c += 1 
+                self.max_features = [0] * 6  # 除动作之外的其余指标
+                # 1 zhanli 2 dengji 3 jinbi 4 zuanshi 5 heizuan 6 tili 下同
+                self.min_features = [sys.maxsize] * 6
+                self.features_change_times = [0] * 6
+            # test_c += 1
             # if test_c >= 1500:
             #     break
 
@@ -309,7 +366,7 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
         pass
 
     def load(self, file_in, sample_rate=0):
-        corpus = []        
+        corpus = []
         label = []
         with open(file_in[0], 'rb') as f_train:
             user_features = pickle.load(f_train)
@@ -345,9 +402,9 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
             user_label = pickle.load(f_label)
         trains = set(user_features.keys())
         labels = set(user_label.keys())
-        print(len(trains)) # 17964 
-        print(len(labels)) # 17736 13624
-        print(len(trains & labels)) # 17735  13624
+        print(len(trains))  # 17964
+        print(len(labels))  # 17736 13624
+        print(len(trains & labels))  # 17735  13624
         pass
 
 
@@ -357,36 +414,6 @@ def op_features_extract():
     同时这里还可以使用随机森林来共同提取，并使用关联规则进行验证
     '''
     pass
-
-
-def features_merge(file_in, file_out):
-    '''
-    动作信息由XGBoost提取出来之后
-    提取出来的动作进行TF-IDF处理，结合其余的特征，得到新的特征
-    作为数据的标签,其实两个文件都进行了数据的标签的处理，这里可以之选取其中的一个，来进行
-    '''
-    pass
-
-
-def excel_parse():
-    '''
-    提取相关的动作信息和动作的详细说明信息
-    '''
-    import xlrd
-    data = xlrd.open_workbook('./data/狂暴之翼.xlsx')
-    table = data.sheet_by_name('actions_index')
-
-    nrows = table.nrows
-    op_verbose = {}
-
-    for i in range(nrows):
-        verbose = table.row_values(i)
-        if verbose[0] not in op_verbose:
-            op_verbose[verbose[0]] = ' '.join(verbose[1:])
-
-    return op_verbose
-
-# 上述为对数据的处理， 下面的代码是对处理之后的数据进行分析
 
 
 if __name__ == '__main__':
@@ -415,25 +442,25 @@ if __name__ == '__main__':
     # print(np.shape(X))
     # print(type(Y))
     # print(type(op))
-    additional_feature_extractor.features_preprocess()
-    print('data preprocessed !')
-    additional_feature_extractor.write(
-        file_out=[
-            './output/fc_train.txt',
-            './output/sc_train.txt',
-            './output/tc_train.txt',
-            './output/fc_label.pkl',
-            './output/sc_label.pkl',
-            './output/tc_label.pkl'
-        ]
-    )
+    # additional_feature_extractor.features_preprocess()
+    # print('data preprocessed !')
+    # additional_feature_extractor.write(
+    #     file_out=[
+    #         './output/add_fc_train.pkl',
+    #         './output/add_sc_train.pkl',
+    #         './output/add_tc_train.pkl',
+    #         './output/add_fc_label.pkl',
+    #         './output/add_sc_label.pkl',
+    #         './output/add_tc_label.pkl'
+    #     ]
+    # )
     file_in = [
-        './output/fc_train.txt',
-        './output/fc_label.pkl'
+        './output/add_fc_train.pkl',
+        './output/add_fc_label.pkl'
     ]
     with open(file_in[0], 'rb') as f_train:
         user_features = pickle.load(f_train)
-    with open(file_in[1], 'rb') as f_label: 
+    with open(file_in[1], 'rb') as f_label:
         user_label = pickle.load(f_label)
 
     c = 0
