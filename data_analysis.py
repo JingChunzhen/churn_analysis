@@ -226,6 +226,7 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
         # 1 zhanli 2 dengji 3 jinbi 4 zuanshi 5 heizuan 6 tili 下同
         self.min_features = [sys.maxsize] * 6
         self.features_change_times = [0] * 6
+        self.vip = 0
         self.file_in = file_in
         pass
 
@@ -270,7 +271,7 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
         conn = sqlite3.connect(self.file_in)
         c = conn.cursor()
         query_sql = "SELECT user_id, action, zhanli, dengji, jinbi, zuanshi, heizuan, tili, \
-            num_days_played, current_day, relative_timestamp FROM maidian ORDER BY user_id, relative_timestamp"
+            num_days_played, current_day, relative_timestamp, vip FROM maidian ORDER BY user_id, relative_timestamp"
 
         previous_day = None
         previous_userid = None
@@ -282,6 +283,8 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
             num_days_played = row[8]
             current_day = row[9]
             self.relative_timestamp = row[10]
+            #self.vip = int(float(row[11])) # TODO # 这个特征可以不进行更新
+            self.vip = row[11]
 
             if previous_userid is None:
                 for i in range(7):
@@ -318,17 +321,20 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
                     self.fc_user_label[previous_userid] = 1 if num_days_played == 1 else 0
                     # 在一个自然天玩的总时长 应该是在append之后的事情
                     user_features.append(self.feature_matrix[7][0])
+                    user_features.append(0 if self.vip == 0 else 1)
                     self.fc_user_features[previous_userid] = user_features
                     print(len(self.fc_user_features[previous_userid]))
                 elif previous_day == 2:
                     self.sc_user_label[previous_userid] = 1 if num_days_played == 2 else 0
                     user_features.append(
                         self.feature_matrix[7][-1] - self.feature_matrix[7][-2])
+                    user_features.append(0 if self.vip == 0 else 1)
                     self.sc_user_features[previous_userid] = user_features
                 elif previous_day == 3:
                     self.tc_user_label[previous_userid] = 1 if num_days_played == 3 else 0
                     user_features.append(
                         self.feature_matrix[7][-1] - self.feature_matrix[7][-2])
+                    user_features.append(0 if self.vip == 0 else 1)
                     self.tc_user_features[previous_userid] = user_features
                 else:
                     pass
@@ -350,6 +356,7 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
                 # 1 zhanli 2 dengji 3 jinbi 4 zuanshi 5 heizuan 6 tili 下同
                 self.min_features = [sys.maxsize] * 6
                 self.features_change_times = [0] * 6
+                self.vip = 0
             # test_c += 1
             # if test_c >= 1500:
             #     break
@@ -416,6 +423,7 @@ def op_features_extract():
     pass
 
 
+'''
 if __name__ == '__main__':
     action_feature_extractor = Action_Feature_Extractor(
         file_in='./data/kbzy.db')  # 对于该类的函数测试完成
@@ -471,15 +479,4 @@ if __name__ == '__main__':
         c += 1
         if c >= 10:
             break
-    '''
-    X, Y = additional_feature_extractor.load(file_in=[
-        './output/fc_train.txt',
-        './output/fc_label.pkl'
-    ])
-
-    print(type(X))
-    print(np.shape(X))
-    print(type(Y))
-
-    pass
-    '''
+'''
