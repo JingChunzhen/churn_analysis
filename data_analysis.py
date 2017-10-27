@@ -270,6 +270,7 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
     def features_preprocess(self):
         conn = sqlite3.connect(self.file_in)
         c = conn.cursor()
+        c.execute("PRAGMA temp_store = 2")
         query_sql = "SELECT user_id, action, zhanli, dengji, jinbi, zuanshi, heizuan, tili, \
             num_days_played, current_day, relative_timestamp, vip FROM maidian ORDER BY user_id, relative_timestamp"
 
@@ -283,7 +284,7 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
             num_days_played = row[8]
             current_day = row[9]
             self.relative_timestamp = row[10]
-            #self.vip = int(float(row[11])) # TODO # 这个特征可以不进行更新
+            # self.vip = int(float(row[11])) # TODO # 这个特征可以不进行更新
             self.vip = row[11]
 
             if previous_userid is None:
@@ -298,29 +299,27 @@ class Additional_Features_Extractor(Base_Feature_Extractor):
             else:
 
                 self.feature_matrix[7].append(self.previous_times[7])
+                # 增加用户在该自然天的动作的种类 index: 0
                 user_features = [len(self.op_categories)]
+                # 增加用户的动作上的最大时间间隔  index: 1
                 user_features.append(np.max(self.feature_matrix[0]) if len(
                     self.feature_matrix[0]) != 0 else 0)
-                for i in range(7):
-                    user_features.append(np.nanmean(self.feature_matrix[i]) if len(
-                        self.feature_matrix[i]) != 0 else 0)                          
-                
-                for value in self.max_features:
-                    user_features.append(value)
-                for value in self.min_features:
-                    user_features.append(value)
-                for value in self.features_change_times:
-                    user_features.append(value)      
-                
-                # 0 op_categories
-                # 1 动作的最大时间间隔
-                # 2 3 4 5 6 7 8 动作平均间隔， 战力， 等级， 金币， 钻石，黑钻，体力平均增长速度
-                # 由XGB提取出钻石平均增长速度是一个重要指标
-                # 新增特征加入
+                # 在用户特征中增加 动作的平均时间间隔， 战力， 等级， 金币， 钻石， 黑钻， 体力特征随时间的比值 index: 2 3 4 5 6 7 8
+                [user_features.append(np.nanmean(self.feature_matrix[i]) if len(
+                    self.feature_matrix[i]) != 0 else 0) for i in range(7)]
+                # 在用户特征中增加 战力， 等级， 金币， 钻石， 黑钻， 体力特征的最大值 index: 9 10 11 12 13 14
+                [user_features.append(value) for value in self.max_features]
+                # 在用户特征中增加 战力， 等级， 金币， 钻石， 黑钻， 体力特征的最小值 index: 15 16 17 18 19 20
+                [user_features.append(value) for value in self.min_features]
+                # 在用户特征中增加 战力， 等级， 金币， 钻石， 黑钻， 体力特征的变化次数 index: 21 22 23 24 25 26
+                [user_features.append(value)
+                 for value in self.features_change_times]
+
                 if previous_day == 1:
                     self.fc_user_label[previous_userid] = 1 if num_days_played == 1 else 0
-                    # 在一个自然天玩的总时长 应该是在append之后的事情
+                    # 在用户特征中增加了用户在该自然天玩的总时长 index: 27
                     user_features.append(self.feature_matrix[7][0])
+                    # 在用户特征中增加了用户的vip属性 index: 28
                     user_features.append(0 if self.vip == 0 else 1)
                     self.fc_user_features[previous_userid] = user_features
                     print(len(self.fc_user_features[previous_userid]))
