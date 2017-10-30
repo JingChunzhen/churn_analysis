@@ -1,45 +1,49 @@
 import tensorflow as tf
 import numpy as np
 import sklearn
-import pickle
-from tensorflow.contrib import learn
+from sklearn.cross_validation import train_test_split
 from data_parser import data_generate, batch_iter
 
 
 class CNN(object):
     '''
     bi-gram & tri-gram feature extractor using CNN
-    仅提取最后50个动作，使用xgboost模型得到的分类准确率为70%
+    extract the final 50 ops, get 70% acc using xgboost
+    the model should be visualizable 
     TODO:Xaiver init
     TODO:Batch Norm 
     TODO:Attention
     '''
 
-    def __init__(self, out_channels=20, dropout_rate=0.5, embedding_size=50, batch_size=5, ops_length=50):
+    def __init__(self, out_channels=20, dropout_rate=0.5, embedding_size=50, batch_size=5, ops_length=50,
+                 learning_rate=0.03, l2_reg_loss=0.01):
         '''
         '''
-        self.out_channels = out_channels  # 20
+        self.out_channels = out_channels  
         self.dropout_rate = dropout_rate
         self.vocab_size = None
         self.embedding_size = embedding_size
         self.batch_size = batch_size
         self.ops_length = ops_length
-        # weights shape: filter_height, filter_width, channel_in, out_channels        
+        self.learning_rate = learning_rate
+        self.l2_reg_loss = l2_reg_loss
+        # weights shape: filter_height, filter_width, channel_in, out_channels
         self.W = {
             'w_2': tf.Variable(tf.random_normal([2, self.embedding_size, 1, self.out_channels])),
-            'w_3': tf.Variable(tf.random_normal([3, self.embedding_size, 1, self.out_channels])),
-            'wf': tf.Variable(tf.random_normal([2 * self.out_channels, 2]))  # TODO
+            'w_3': tf.Variable(tf.random_normal([3, self.embedding_size, 1, self.out_channels])),            
+            'wf': tf.Variable(tf.random_normal([2 * self.out_channels, 2]))
         }
         self.B = {
             'b_2': tf.Variable(tf.random_normal([self.out_channels])),
             'b_3': tf.Variable(tf.random_normal([self.out_channels])),
-            'bf': tf.Variable(tf.random_normal([2]))  # TODO
+            'bf': tf.Variable(tf.random_normal([2]))  
         }
-        # X shape: batch_size, X_height, X_width, in_channels
         # split the X into training, validation, test data
+        # input x shape: (batch size, sequence length, embedding size)
+        # reshape to batch size, x_height, x_width, in_channels (in_channels == 1)
         self.X = tf.placeholder(dtype='float', shape=[
-                                None, self.ops_length, self.embedding_size]) # TODO
-        self.Y = tf.placeholder(dtype='float', shape=[None, 2])        
+                                None, self.ops_length, self.embedding_size])
+        self.Y = tf.placeholder(dtype='float', shape=[None, 2])
 
     def conv2d(self, x, w, b, strides=1):
         x = tf.nn.conv2d(
@@ -49,64 +53,122 @@ class CNN(object):
 
     def max_pooling(self, x, k):
         return tf.nn.max_pool(value=x, ksize=[1, self.ops_length - k + 1, 1, 1], strides=[1, 1, 1, 1], padding='VALID')
-    
+
     def conv_process(self, x):
         h_2 = self.conv2d(x, self.W['w_2'], self.B['b_2'])
         h_2 = self.max_pooling(h_2, 2)
         h_3 = self.conv2d(x, self.W['w_3'], self.B['b_3'])
         h_3 = self.max_pooling(h_3, 3)
         return h_2, h_3
-        pass
 
-    def process(self, x, y):
-        inpt_x = tf.reshape(x, [self.batch_size, self.ops_length, self.embedding_size, 1])
+    def process(self, x, y, is_dropout):
+        '''
+        Args:
+            x (np.array):
+            y (np.array):            
+            is_dropout (boolean): True for training, False for validation or test 
+        '''
+        inpt_x = tf.reshape(
+            x, [self.batch_size, self.ops_length, self.embedding_size, 1])
+        l2_loss = tf.constant(0.0)
         h_2, h_3 = self.conv_process(inpt_x)
-        h_2 = tf.reshape(h_2, [-1, self.out_channels]) # 
+        # after filtering if padding='SAME' (5, 50, 50, 20) else if padding='VALID' (5, 49, 1, 20)
+        # after max pooling (5, 1, 1, 20) after reshape (5, 20)
+        h_2 = tf.reshape(h_2, [-1, self.out_channels])
         h_3 = tf.reshape(h_3, [-1, self.out_channels])
-        h_4 = tf.concat([h_2, h_3], axis=1)    
-        res = tf.nn.relu(tf.add(tf.matmul(x, self.W['wf']), self.B['bf']))
+        h_4 = tf.concat([h_2, h_3], axis=1)  # shape (5, 40)
+        h_5 = tf.nn.dropout(h_4, self.dropout_rate) if is_dropout else h_4
+        predict = tf.nn.softmax(
+            tf.add(tf.matmul(h_5, self.W['wf']), self.B['bf']))  # shape (5, 2)
+        return predict
 
-        # 连接提取出的bigram特征和trigram特征
-        # h = tf.concat() # TODO
-        # h = tf.concat(values=[], axis)
-        # h = tf.add(tf.matmul(h, self.W['wf']), self.B['bf'])
-        # h = tf.nn.relu(h)
-        # res = tf.nn.dropout(h, self.dropout_rate)  # softmax
+    def train(self, x, y, is_training):
+        '''
+        Args:            
+            is_training (boolean): True for training, False for validation or test        
+        '''
+        predict = self.process(
+            x, y, True) if is_training else self.process(x, y, False)
+        l2_loss = tf.constant(0.0)
+        l2_loss += tf.nn.l2_loss(self.W['wf'])
+        l2_loss += tf.nn.l2_loss(self.B['bf'])
+        loss_op = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+            logits=predict, labels=tf.cast(self.Y, tf.int32))) + self.l2_reg_loss * l2_loss
+
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        train_op = optimizer.minimize(
+            loss=loss_op, global_step=tf.train.get_global_step())
+        accuracy_op = tf.metrics.accuracy(labels=self.Y, predictions=predict)
         init = tf.initialize_all_variables()
         with tf.Session() as sess:
             sess.run(init)
-            res_x, res_h_2, res_h_3, res_h_4, res_h_5 = sess.run([inpt_x, h_2, h_3, h_4, h_5], feed_dict={
-                self.X: x,
-                self.Y: y
-            })
-
-            '''
-            ValueError: Cannot feed value of shape (5, 50, 50) for\
-             Tensor 'Placeholder:0', which has shape '(5, 50, 50, 1)'
-            '''
-            print(type(inpt_x))
-            print(np.shape(inpt_x)) 
-            print(type(res_h_2))
-            print(np.shape(res_h_2)) # (5, 50, 50 ,20) (5, 49 1, 20) (5, 1, 1, 20) -> (5, 20)
-            print(type(res_h_3))
-            print(np.shape(res_h_3)) # (5, 50, 50, 20) (5 ,48, 1, 20) (5 ,1, 1, 20) -> (5, 20)                
-            print(np.shape(res_h_4)) # (5 40)            
-
-    def test_for_variable_shape():
-        pass
+            _, loss, accuracy = sess.run(
+                [train_op, loss_op, accuracy_op], feed_dict={self.X: x, self.Y: y})
+        return loss, accuracy
 
 
-if __name__ == '__main__':    
-    cnn = CNN()
-    res = data_generate(file_in=[
-        '../data/act_fc_train.pkl',
-        '../data/act_fc_label.pkl',
-        './fc_embeddings.model'
-    ])
+class METRIC(object):
+    '''    
+    TODO: model saving and loading
+    TODO: early-stopping should be performed in trainning 
+    TODO:
+    '''
 
-    data, label = res[0], res[1]
-    for batch_data, batch_label in batch_iter(data, label, 5, 1, False):
-        # print(batch_data.shape) 
-        # print(batch_label.shape)
-        cnn.process(batch_data, batch_label)
-        break        
+    def __init__(self, batch_size=5, epochs=1, test_size=0.3, validate_size=0.2):
+        self.X_train = None
+        self.X_test = None
+        self.X_validate = None
+        self.Y_train = None
+        self.Y_test = None
+        self.Y_validate = None
+        self.test_size = test_size
+        self.validate_size = validate_size
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.cnn = CNN()
+
+    def data_split(self):
+        res = data_generate(file_in=[
+                            '../output/act_fc_train.pkl', '../output/act_fc_label.pkl', './fc_embeddings.model'])
+        X, Y = res[0], res[1]
+        X_train, self.X_test, Y_train, self.Y_test = train_test_split(
+            X, Y, test_size=self.test_size)
+        self.X_train, self.X_validate, self.Y_train, self.Y_validate = train_test_split(
+            X_train, Y_train, test_size=self.validate_size)
+    
+    def evaluate(self, x, y):
+        accuracies = []
+        losses = []
+        for batch_data, batch_label in batch_iter(data=x, label=y, batch_size=self.batch_size,
+                                                  epochs=1, shuffle=False):
+            loss, accuracy = self.cnn.train(x=batch_data, y=batch_label, is_training=False)
+            losses.append(loss)
+            accuracies.append(accuracy)
+        return np.mean(losses), np.mean(accuracies)
+
+    def training(self):           
+        i = 0 
+        count = 0
+        for batch_data, batch_label in batch_iter(data=self.X_train, label=self.Y_train, batch_size=self.batch_size, # error NoneType object has no len
+                                                  epochs=self.epochs, shuffle=False):
+            loss_train, acc_train = self.cnn.train(x=batch_data, y=batch_label, is_training=True)            
+            i += 1    
+            if i % 10 == 0:
+                loss_validate, acc_validate = self.evaluate(self.X_validate, self.Y_validate)
+                '''
+                stop when 
+                '''
+                if loss_validate <= loss_train:
+                    count += 1
+                else:
+                    count = 0
+                if count >= 5:
+                    break
+                print('log info training loss and accuracy is {}, {}'.format(loss_train, acc_train))
+                print('log info validation loss and accuracy is {}, {}'.format(loss_validate, acc_validate))
+        _, acc_test = self.evaluate(self.X_test, self.Y_test)
+        print('evaluation final accuracy is {}'.format(acc_test))
+
+if __name__ == '__main__':
+    metrics = METRIC()
+    metrics.training()

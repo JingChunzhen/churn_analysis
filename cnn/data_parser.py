@@ -2,10 +2,10 @@ import pickle
 import numpy as np
 from gensim.models import word2vec
 '''
-    split data into training_data, validation data, test data
+    split data into training data, validation data, test data
 '''
 
-def word2vec_train(file_in='../data/act_fc_train.pkl', file_out='./fc_embeddings.model', embedding_size=50):
+def word2vec_train(file_in='../output/act_fc_train.pkl', file_out='./fc_embeddings.model', embedding_size=50):
     with open(file_in, 'rb') as f_ops:
         user_ops = pickle.load(f_ops)
         sentences = []
@@ -19,7 +19,7 @@ def word2vec_train(file_in='../data/act_fc_train.pkl', file_out='./fc_embeddings
 def data_generate(file_in):
     '''
     Args:
-        file_in (list): [training data (pickle), training_label (pickle), word2vec_model (bin)]
+        file_in (list): [training data (pickle), training label (pickle), word2vec model (bin)]
     Returns:
         list: [data, label]
     '''
@@ -42,9 +42,10 @@ def data_generate(file_in):
 def batch_iter(data, label, batch_size, epochs, shuffle):
     '''
     '''
+    data_size = len(data)
     data = np.array(data)
     label = np.array(label)
-    data_size = len(data)  # 这个用法类似len(list)
+    #data_size = len(data)  # like len(list)
     num_batches_per_epoch = int(len(data) / batch_size)
 
     for epoch in range(epochs):
@@ -63,17 +64,6 @@ def batch_iter(data, label, batch_size, epochs, shuffle):
 
 
 if __name__ == '__main__':
-    #word2vec_train()
-    res = data_generate(file_in=[
-        '../data/act_fc_train.pkl',
-        '../data/act_fc_label.pkl',
-        './fc_embeddings.model'
-    ])
-
-    data, label = res[0], res[1]
-    data = np.array(data)
-    label = np.array(label)
+    word2vec_train()
     
-    print(np.shape(data))
-    print(np.shape(label))
 
