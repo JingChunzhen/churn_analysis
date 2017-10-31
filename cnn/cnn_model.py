@@ -10,12 +10,13 @@ class CNN(object):
     bi-gram & tri-gram feature extractor using CNN
     extract the final 50 ops, get 70% acc using xgboost
     the model should be visualizable 
+    run in a bigger data set 
     TODO:Xaiver init
     TODO:Batch Norm 
     TODO:Attention
     '''
 
-    def __init__(self, out_channels=20, dropout_rate=0.5, embedding_size=50, batch_size=5, ops_length=50,
+    def __init__(self, out_channels=20, dropout_rate=0.5, embedding_size=50, batch_size=100, ops_length=50,
                  learning_rate=0.03, l2_reg_loss=0.01):
         '''
         '''
@@ -98,8 +99,10 @@ class CNN(object):
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
         train_op = optimizer.minimize(
             loss=loss_op, global_step=tf.train.get_global_step())
-        accuracy_op = tf.metrics.accuracy(labels=self.Y, predictions=predict)
-        init = tf.initialize_all_variables()
+        #accuracy_op = tf.metrics.accuracy(labels=self.Y, predictions=predict)
+        correct_predictions = tf.equal(tf.argmax(predict, 1), tf.argmax(self.Y, 1))
+        accuracy_op = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+        init = tf.global_variables_initializer()
         with tf.Session() as sess:
             sess.run(init)
             _, loss, accuracy = sess.run(
@@ -114,7 +117,7 @@ class METRIC(object):
     TODO:
     '''
 
-    def __init__(self, batch_size=5, epochs=1, test_size=0.3, validate_size=0.2):
+    def __init__(self, batch_size=100, epochs=1, test_size=0.2, validate_size=0.01):
         self.X_train = None
         self.X_test = None
         self.X_validate = None
@@ -150,14 +153,12 @@ class METRIC(object):
         i = 0 
         count = 0
         for batch_data, batch_label in batch_iter(data=self.X_train, label=self.Y_train, batch_size=self.batch_size, # error NoneType object has no len
-                                                  epochs=self.epochs, shuffle=False):
-            loss_train, acc_train = self.cnn.train(x=batch_data, y=batch_label, is_training=True)            
+                                                  epochs=self.epochs, shuffle=False):            
+            loss_train, acc_train = self.cnn.train(x=batch_data, y=batch_label, is_training=True) 
+            print('loss and acc is {}, {}'.format(loss_train, acc_train))           
             i += 1    
             if i % 10 == 0:
-                loss_validate, acc_validate = self.evaluate(self.X_validate, self.Y_validate)
-                '''
-                stop when 
-                '''
+                loss_validate, acc_validate = self.evaluate(self.X_validate, self.Y_validate)                
                 if loss_validate <= loss_train:
                     count += 1
                 else:
@@ -171,4 +172,5 @@ class METRIC(object):
 
 if __name__ == '__main__':
     metrics = METRIC()
+    metrics.data_split()
     metrics.training()
