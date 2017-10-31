@@ -32,7 +32,11 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 #     X_train, Y_train, test_size=0.2)
 
 # Additional_Features_Extractor(file_in='./data/kbzy.db').check(file_in=['./output/fc_train.txt', './output/fc_label.pkl'])
-# X, Y = Additional_Features_Extractor(file_in='./data/kbzy.db').load(file_in=['./output/fc_train.txt', './output/fc_label.pkl'])
+X, Y = Additional_Features_Extractor(file_in='./data/kbzy.db').load(
+    file_in=['./output/add_fc_train.pkl', './output/add_fc_label.pkl'])
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.33)
+X_train, X_validate, Y_train, Y_validate = train_test_split(
+    X_train, Y_train, test_size=0.2)
 # #X, Y, _ = Action_Feature_Extractor(file_in='./data/kbzy.db').load(file_in=['./output/op_feature/fc_train.txt', './output/op_feature/fc_label.pkl'])
 # print(np.shape(X))  # -> 17965 2069
 # print(len(Y)) # -> 17965
@@ -222,9 +226,9 @@ def xgb_model(op, action_id, op_verbose, op_clicks):
     Y_pred = model.predict(X_test)
     print('test score {}'.format(accuracy_score(Y_test, Y_pred)))
     print(precision_recall_fscore_support(Y_test, Y_pred, average=None))
-    id_action = {v: k for k, v in action_id.items()}
-    op_importances_indexes = list(np.argsort(
-        list(model.feature_importances_)[0: len(op)]))[::-1]
+    #id_action = {v: k for k, v in action_id.items()}
+    # op_importances_indexes = list(np.argsort(
+    #     list(model.feature_importances_)[0: len(op)]))[::-1]
 
     # c = 0
     # for index in op_importances_indexes:  # 需要在这个地方加入action_id这个参数进来
@@ -237,14 +241,16 @@ def xgb_model(op, action_id, op_verbose, op_clicks):
     #         break
     # pass
 
-    
-    #for index in [len(op)]
+    # for index in [len(op)]
 
-    print(type(model.feature_importances_))    
-    #print(model.feature_importances_.shape)
-    print(list(model.feature_importances_)[-1:-20:-1])
-    #print(len(list(model.feature_importances_)))
-    #for importance in list(model.feature_importances_)[len(op), model.feature_importances_.shape[0]]:
+    # print(type(model.feature_importances_))
+    print(type(model.feature_importances_))
+    print(np.sort(model.feature_importances_))
+    print(np.argsort(model.feature_importances_))
+    # print(model.feature_importances_.shape)
+    # print(list(model.feature_importances_)[-1:-20:-1])
+    # print(len(list(model.feature_importances_)))
+    # for importance in list(model.feature_importances_)[len(op), model.feature_importances_.shape[0]]:
     #    print(importance)
 
 
@@ -272,6 +278,7 @@ def test_xgb():
 def op_statictis(file_in, action_id):
     '''
     此时还需要一个action_id这样的一个字典
+    对于重要的动作每一个动作在所有点击该动作的玩家中的比值
     '''
     op_clicks = {}
     sum_users = [0] * 2
@@ -285,48 +292,57 @@ def op_statictis(file_in, action_id):
             for op in ops:
                 if op not in op_clicks:
                     op_clicks[op] = [0] * 2
-                op_clicks[op][user_label[user]] += 1                      
+                op_clicks[op][user_label[user]] += 1
 
     new_op_clicks = {id_action[k]: [v[0] * 1.0 / sum_users[0],
-                                v[1] * 1.0 / sum_users[1]] for k, v in op_clicks.items()}       
+                                    v[1] * 1.0 / sum_users[1]] for k, v in op_clicks.items()}
     return new_op_clicks
 
+
 def op_check(file_in):
+    '''
+    流失玩家和非流失玩家的平均点击量
+    '''
     ops_click = [0] * 2
     user_num = [0] * 2
     average_click = [0] * 2
     with open(file_in[0], 'rb') as f_op, open(file_in[1], 'rb') as f_label:
         user_ops = pickle.load(f_op)
-        user_label = pickle.load(f_label)        
+        user_label = pickle.load(f_label)
         for user, ops in user_ops.items():
             ops_click[user_label[user]] += len(ops)
-            user_num[user_label[user]] += 1 
+            user_num[user_label[user]] += 1
 
         average_click = [ops_click[i] * 1.0 / user_num[i] for i in [0, 1]]
-    
+
     return average_click
 
+# if __name__ == '__main__':
+#     op_verbose = excel_parse()
+
+#     day = 0
+#     for X, Y, op, action_id in features_merge():
+#         if day == 0:
+#             op_clicks = op_statictis(['./output/act_fc_train.pkl', './output/act_fc_label.pkl'], action_id)
+#             pass
+#         elif day == 1:
+#             op_clicks = op_statictis(['./output/act_sc_train.pkl', './output/act_sc_label.pkl'], action_id)
+#             pass
+#         else:
+#             op_clicks = op_statictis(['./output/act_tc_train.pkl', './output/act_tc_label.pkl'], action_id)
+
+#         X_train, X_test, Y_train, Y_test = train_test_split(
+#             X, Y, test_size=0.33)
+#         X_train, X_validate, Y_train, Y_validate = train_test_split(
+#             X_train, Y_train, test_size=0.2)
+#         xgb_model(op, action_id, op_verbose, op_clicks)
+#         day += 1
+
+
 if __name__ == '__main__':
-    op_verbose = excel_parse()
 
-    day = 0
-    for X, Y, op, action_id in features_merge():
-        if day == 0:
-            op_clicks = op_statictis(['./output/act_fc_train.pkl', './output/act_fc_label.pkl'], action_id)
-            pass
-        elif day == 1:
-            op_clicks = op_statictis(['./output/act_sc_train.pkl', './output/act_sc_label.pkl'], action_id)
-            pass
-        else:
-            op_clicks = op_statictis(['./output/act_tc_train.pkl', './output/act_tc_label.pkl'], action_id)
-
-        X_train, X_test, Y_train, Y_test = train_test_split(
-            X, Y, test_size=0.33)
-        X_train, X_validate, Y_train, Y_validate = train_test_split(
-            X_train, Y_train, test_size=0.2)
-        xgb_model(op, action_id, op_verbose, op_clicks)
-        day += 1
-
+    xgb_model()
+    pass
 # if __name__ == '__main__':
 #     average_click = op_check(['./output/act_fc_train.pkl', './output/act_fc_label.pkl'])
 #     print(average_click)
