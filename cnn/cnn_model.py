@@ -32,12 +32,16 @@ class CNN(object):
         self.W = {
             'w_2': tf.Variable(tf.random_normal([2, self.embedding_size, 1, self.out_channels])),
             'w_3': tf.Variable(tf.random_normal([3, self.embedding_size, 1, self.out_channels])),            
-            'wf': tf.Variable(tf.random_normal([2 * self.out_channels, 2]))
+            'w_5': tf.Variable(tf.random_normal([5, self.embedding_size, 1, self.out_channels])),
+            'wf_1': tf.Variable(tf.random_normal([3 * self.out_channels, 10])),
+            'wf_2': tf.Variable(tf.random_normal([10, 2]))
         }
         self.B = {
             'b_2': tf.Variable(tf.random_normal([self.out_channels])),
             'b_3': tf.Variable(tf.random_normal([self.out_channels])),
-            'bf': tf.Variable(tf.random_normal([2]))  
+            'b_5': tf.Variable(tf.random_normal([self.out_channels])),
+            'bf_1': tf.Variable(tf.random_normal([10])),
+            'bf_2': tf.Variable(tf.random_normal([2]))
         }
         # split the X into training, validation, test data
         # input x shape: (batch size, sequence length, embedding size)
@@ -60,7 +64,9 @@ class CNN(object):
         h_2 = self.max_pooling(h_2, 2)
         h_3 = self.conv2d(x, self.W['w_3'], self.B['b_3'])
         h_3 = self.max_pooling(h_3, 3)
-        return h_2, h_3
+        h_5 = self.conv2d(x, self.W['w_5'], self.B['b_5'])
+        h_5 = self.max_pooling(h_5, 5)
+        return h_2, h_3, h_5
 
     def process(self, x, y, is_dropout):
         '''
@@ -72,15 +78,17 @@ class CNN(object):
         inpt_x = tf.reshape(
             x, [self.batch_size, self.ops_length, self.embedding_size, 1])
         l2_loss = tf.constant(0.0)
-        h_2, h_3 = self.conv_process(inpt_x)
+        h_2, h_3, h_5 = self.conv_process(inpt_x)
         # after filtering if padding='SAME' (5, 50, 50, 20) else if padding='VALID' (5, 49, 1, 20)
         # after max pooling (5, 1, 1, 20) after reshape (5, 20)
         h_2 = tf.reshape(h_2, [-1, self.out_channels])
         h_3 = tf.reshape(h_3, [-1, self.out_channels])
-        h_4 = tf.concat([h_2, h_3], axis=1)  # shape (5, 40)
-        h_5 = tf.nn.dropout(h_4, self.dropout_rate) if is_dropout else h_4
-        predict = tf.nn.softmax(
-            tf.add(tf.matmul(h_5, self.W['wf']), self.B['bf']))  # shape (5, 2)
+        h_5 = tf.reshape(h_5, [-1, self.out_channels])
+        h_4 = tf.concat([h_2, h_3, h_5], axis=1)  # shape (5, 40)
+        h_6 = tf.nn.dropout(h_4, self.dropout_rate) if is_dropout else h_4
+        
+        inter_res = tf.nn.relu(tf.add(tf.matmul(h_6, self.W['wf_1']), self.B['bf_1'])) # shape (5, 2)
+        predict = tf.nn.softmax(tf.add(tf.matmul(inter_res, self.W['wf_2']), self.B['bf_2']))
         return predict
 
     def train(self, x, y, is_training):
@@ -91,8 +99,10 @@ class CNN(object):
         predict = self.process(
             x, y, True) if is_training else self.process(x, y, False)
         l2_loss = tf.constant(0.0)
-        l2_loss += tf.nn.l2_loss(self.W['wf'])
-        l2_loss += tf.nn.l2_loss(self.B['bf'])
+        l2_loss += tf.nn.l2_loss(self.W['wf_1'])
+        l2_loss += tf.nn.l2_loss(self.B['bf_1'])
+        l2_loss += tf.nn.l2_loss(self.W['wf_2'])
+        l2_loss += tf.nn.l2_loss(self.B['bf_2'])
         loss_op = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits=predict, labels=tf.cast(self.Y, tf.int32))) + self.l2_reg_loss * l2_loss
 
@@ -174,3 +184,5 @@ if __name__ == '__main__':
     metrics = METRIC()
     metrics.data_split()
     metrics.training()
+    from tensorflow.contrib import learn
+    learn.preprocessing.VocabularyProcessor()
