@@ -5,6 +5,8 @@ from sklearn.cross_validation import train_test_split
 from data_parser import data_generate, batch_iter
 
 
+# 小波变换
+
 class CNN(object):
     '''
     bi-gram & tri-gram feature extractor using CNN
@@ -16,8 +18,8 @@ class CNN(object):
     TODO:Attention
     '''
 
-    def __init__(self, out_channels=20, dropout_rate=0.5, embedding_size=50, batch_size=100, ops_length=50,
-                 learning_rate=0.03, l2_reg_loss=0.01):
+    def __init__(self, out_channels=20, dropout_rate=0.5, embedding_size=50, batch_size=32, ops_length=50,
+                 learning_rate=1e-1, l2_reg_loss=0.0):
         '''
         '''
         self.out_channels = out_channels  
@@ -29,18 +31,19 @@ class CNN(object):
         self.learning_rate = learning_rate
         self.l2_reg_loss = l2_reg_loss
         # weights shape: filter_height, filter_width, channel_in, out_channels
+        # try longer filter 
         self.W = {
-            'w_2': tf.Variable(tf.random_normal([2, self.embedding_size, 1, self.out_channels])),
-            'w_3': tf.Variable(tf.random_normal([3, self.embedding_size, 1, self.out_channels])),            
-            'w_5': tf.Variable(tf.random_normal([5, self.embedding_size, 1, self.out_channels])),
-            'wf_1': tf.Variable(tf.random_normal([3 * self.out_channels, 10])),
-            'wf_2': tf.Variable(tf.random_normal([10, 2]))
+            'w_2': tf.Variable(tf.random_normal([10, self.embedding_size, 1, self.out_channels])),
+            'w_3': tf.Variable(tf.random_normal([20, self.embedding_size, 1, self.out_channels])),            
+            'w_5': tf.Variable(tf.random_normal([30, self.embedding_size, 1, self.out_channels])),
+            'wf_1': tf.Variable(tf.random_normal([3 * self.out_channels, 128])),
+            'wf_2': tf.Variable(tf.random_normal([128, 2]))
         }
         self.B = {
             'b_2': tf.Variable(tf.random_normal([self.out_channels])),
             'b_3': tf.Variable(tf.random_normal([self.out_channels])),
             'b_5': tf.Variable(tf.random_normal([self.out_channels])),
-            'bf_1': tf.Variable(tf.random_normal([10])),
+            'bf_1': tf.Variable(tf.random_normal([128])),
             'bf_2': tf.Variable(tf.random_normal([2]))
         }
         # split the X into training, validation, test data
@@ -57,15 +60,18 @@ class CNN(object):
         return tf.nn.relu(x)
 
     def max_pooling(self, x, k):
+        '''
+        maxpool 失去了一部分信息
+        '''
         return tf.nn.max_pool(value=x, ksize=[1, self.ops_length - k + 1, 1, 1], strides=[1, 1, 1, 1], padding='VALID')
 
     def conv_process(self, x):
         h_2 = self.conv2d(x, self.W['w_2'], self.B['b_2'])
-        h_2 = self.max_pooling(h_2, 2)
+        h_2 = self.max_pooling(h_2, 10)
         h_3 = self.conv2d(x, self.W['w_3'], self.B['b_3'])
-        h_3 = self.max_pooling(h_3, 3)
+        h_3 = self.max_pooling(h_3, 20)
         h_5 = self.conv2d(x, self.W['w_5'], self.B['b_5'])
-        h_5 = self.max_pooling(h_5, 5)
+        h_5 = self.max_pooling(h_5, 30)
         return h_2, h_3, h_5
 
     def process(self, x, y, is_dropout):
@@ -127,7 +133,7 @@ class METRIC(object):
     TODO:
     '''
 
-    def __init__(self, batch_size=100, epochs=1, test_size=0.2, validate_size=0.01):
+    def __init__(self, batch_size=32, epochs=1, test_size=0.2, validate_size=0.01):
         self.X_train = None
         self.X_test = None
         self.X_validate = None
@@ -184,5 +190,3 @@ if __name__ == '__main__':
     metrics = METRIC()
     metrics.data_split()
     metrics.training()
-    from tensorflow.contrib import learn
-    learn.preprocessing.VocabularyProcessor()
