@@ -31,6 +31,7 @@ def data_generate(file_in):
         label = []
         for user, ops in user_ops.items():
             if len(ops) >= 50:
+                # 这里除了对大于50的进行分类同样要对小于50的分
                 corpus = []
                 for op in ops[-50:]:
                     corpus.append(model.wv[str(op)])  # shape: (ops_length, embedding_size) == (50, 50)
@@ -64,6 +65,9 @@ def batch_iter(data, label, batch_size, epochs, shuffle):
 
 
 if __name__ == '__main__':
-    word2vec_train()
+    #word2vec_train()
+    res = data_generate(file_in=['../output/act_fc_train.pkl', '../output/act_fc_label.pkl', './fc_embeddings.model'])
+    with open('./training_data.pkl', 'wb') as f_out:
+        pickle.dump(res, f_out)    
     
 

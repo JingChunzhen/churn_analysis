@@ -3,16 +3,18 @@ import numpy as np
 import pickle
 import sklearn 
 from data_parse import Parser, batch_iter
+from sklearn.cross_validation import train_test_split
 
 class LSTM(object):
     '''
     '''
 
-    def __init__(self):
-        self.embedding_size = None
-        self.seq_max_length = None
+    def __init__(self, embedding_size=50, seq_max_length=100, learning_rate=0.01, l2_reg=0.0, n_hidden_lstm=100):
+        self.embedding_size = embedding_size
+        self.seq_max_length = seq_max_length
         self.learning_rate = None
         self.l2_reg = None
+        self.n_hidden_lstm = n_hidden_lstm
         self.W = {            
             'wf': tf.Variable(tf.random_normal([self.n_hidden_lstm, 2]))
         }
@@ -34,17 +36,17 @@ class LSTM(object):
         outputs = tf.stack(outputs)
         outputs = tf.transpose(outputs, [1, 0, 2])
         batch_size = tf.shape(outputs)[0]        
-        index = tf.range(0, batch_size) * seq_max_len + (seqlen - 1)        
+        index = tf.range(0, batch_size) * self.seq_max_length + (seqlen - 1)        
         outputs = tf.gather(tf.reshape(outputs, [-1, self.n_hidden_lstm]), index)
         return tf.add(tf.matmul(outputs, self.W['wf']), self.B['bf'])
 
-    def train(x, seqlen):
-        pred = dynamic_rnn(x, seqlen)        
+    def train(self, x, y, seqlen):
+        pred = dynamic_rnn(self.X, self.seq_lengths)        
         loss_op = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits=pred, labels=tf.cast(self.Y, tf.int32)))
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
         train_op =  optimizer.minimize(loss_op, global_step=tf.train.get_global_step())
-        correct_predictions = tf.equal(tf.argmax(predict, 1), tf.argmax(self.Y, 1))
+        correct_predictions = tf.equal(tf.argmax(pred, 1), tf.argmax(self.Y, 1))
         accuracy_op = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
         init = tf.global_variables_initializer()
         with tf.Session() as sess:
@@ -54,7 +56,7 @@ class LSTM(object):
                 feed_dict={
                     self.X: x, 
                     self.Y: y,
-                    self.seqlen = seqlen
+                    self.seq_lengths = seqlen
                 }
             )
         return loss, acc            
@@ -64,7 +66,7 @@ class METRIC(object):
     '''    
     TODO: model saving and loading
     TODO: early-stopping should be performed in trainning 
-    TODO:
+    TODO: 和cnn不太一样
     '''
 
     def __init__(self, batch_size=32, epochs=1, test_size=0.2, validate_size=0.01):
@@ -89,12 +91,12 @@ class METRIC(object):
         self.X_train, self.X_validate, self.Y_train, self.Y_validate = train_test_split(
             X_train, Y_train, test_size=self.validate_size)
     
-    def evaluate(self, x, y):
+    def evaluate(self, x, y, ops_length):
         accuracies = []
         losses = []
-        for batch_data, batch_label in batch_iter(data=x, label=y, batch_size=self.batch_size,
+        for batch_data, batch_label, seq_len in batch_iter(data=x, label=y, ops_length=ops_length, batch_size=self.batch_size,
                                                   epochs=1, shuffle=False):
-            loss, accuracy = self.lstm.train(x=batch_data, y=batch_label, is_training=False)
+            loss, accuracy = self.lstm.train(x=batch_data, y=batch_label, seq_len=seq_len)
             losses.append(loss)
             accuracies.append(accuracy)
         return np.mean(losses), np.mean(accuracies)
