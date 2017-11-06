@@ -12,7 +12,7 @@ class Parser(object):
     store the configure infos using yaml
     '''
 
-    def __init__(self, sql_in='../data/kbzy.db', embedding_size=50):
+    def __init__(self, sql_in='../data/kbzy.db', embedding_size=50, seq_length=100):
         self.sql_in = sql_in
         self.corpus = []
         self.labels = []
@@ -21,6 +21,7 @@ class Parser(object):
         self.seq_length = None
         self.model = None
         self.regx = re.compile(r'board_layer/board.*?')
+        self.seq_length = seq_length 
 
     def sql_data_base_parse(self, file_out, day=1):
         '''
@@ -74,8 +75,9 @@ class Parser(object):
             sentences, self.embedding_size, min_count=1)  
         self.model.save(file_out)
 
-    def data_generator(self, file_in):
+    def data_generator(self, *file_in):
         '''
+        fix file_in -> *file_in with assert
         conditions
         rid ops if the length < 16
         Args:
@@ -83,6 +85,7 @@ class Parser(object):
             labels ()：        
         Returns:
         '''       
+        assert len(file_in) == 3
         ops_length = []
         X = []
         Y = []
@@ -90,21 +93,26 @@ class Parser(object):
         with open(file_in[1], 'rb') as f_ops, open(file_in[2], 'rb') as f_labels:
             self.corpus = pickle.load(f_ops)
             self.labels = pickle.load(f_labels)
-            pass
-        self.seq_length = max([len(ops) for ops in self.corpus])
+        #self.seq_length = 100
         padding_vector = np.random.normal(size=self.embedding_size)
 
         def convert_to_wv(op_id):
             return self.model.wv[str(op_id)] if op_id != 0 else padding_vector
-
+    
         for ops, label in zip(self.corpus, self.labels):
-            ops_length.append(len(ops))
-            mask = [0] * self.seq_length  # padding
-            for i in range(len(ops)):
-                mask[i] = ops[i]
+            mask = [0] * self.seq_length
+            if len(ops) < self.seq_length:
+                ops_length.append(len(ops))   
+                for i in range(len(ops)):
+                    mask[i] = ops[i]         
+            else:
+                ops_length.append(self.seq_length)
+                for i in range(len(ops[-self.seq_length:])):
+                    mask[i] = ops[i]
+            
             line = list(map(convert_to_wv, mask))
             X.append(line)
-            Y.append(label)
+            Y.append(label)                                        
         return np.array(X), np.array(Y), ops_length
 
 
@@ -140,6 +148,6 @@ if __name__ == '__main__':
     parser = Parser()
     # parser.sql_data_base_parse(file_out=['./fc_ops.pkl', './fc_labels.pkl'])
     # parser.word2vec_training(file_out='wv.bin')
-    x, y, _ = parser.data_generator(file_in=['wv.bin', 'fc_ops.pkl', 'fc_labels.pkl'])
+    x, y, _ = parser.data_generator(file_in=['wv.bin', 'fc_ops.pkl', 'fc_labels.pkl']) 
     print(np.shape(x))
     print(np.shape(y))
