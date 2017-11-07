@@ -21,9 +21,9 @@ class Parser(object):
         self.seq_length = None
         self.model = None
         self.regx = re.compile(r'board_layer/board.*?')
-        self.seq_length = seq_length 
+        self.seq_length = seq_length
 
-    def sql_data_base_parse(self, file_out, day=1):
+    def sql_data_base_parse(self, *file_out, day=1):
         '''
         replace the chat op by a substitute 
         Args:
@@ -34,6 +34,7 @@ class Parser(object):
             corpus (list): shape = (num of users, ops length)
             labels (list): shape = (num of users, 2)
         '''
+        assert len(file_out) == 2
         conn = sqlite3.connect(self.sql_in)
         c = conn.cursor()
         query_sql = "SELECT user_id, action, num_days_played \
@@ -42,7 +43,7 @@ class Parser(object):
         self.corpus = []
         self.labels = []
         ops = []
-        previous_userid = None        
+        previous_userid = None
         self.action_id = {}
         i = 1
         for row in c.execute(query_sql):
@@ -62,17 +63,17 @@ class Parser(object):
             else:
                 ops.append(self.action_id[action])
             previous_userid = user_id
-        
+
         with open(file_out[0], 'wb') as f_ops, open(file_out[1], 'wb') as f_labels:
             pickle.dump(self.corpus, f_ops)
-            pickle.dump(self.labels, f_labels)            
+            pickle.dump(self.labels, f_labels)
 
     def word2vec_training(self, file_out):
         sentences = []
         for ops in self.corpus:
             sentences.append([str(op) for op in ops])
         self.model = word2vec.Word2Vec(
-            sentences, self.embedding_size, min_count=1)  
+            sentences, self.embedding_size, min_count=1)
         self.model.save(file_out)
 
     def data_generator(self, *file_in):
@@ -81,15 +82,14 @@ class Parser(object):
         conditions
         rid ops if the length < 16
         Args:
-            corpus ():
-            labels ()：        
+            file_in: ops, labels, wv     
         Returns:
-        '''       
+        '''
         assert len(file_in) == 3
         ops_length = []
         X = []
         Y = []
-        self.model = word2vec.Word2Vec.load(file_in[0])
+        self.model = word2vec.Word2Vec.load(file_in[0]) # 'list' object has no attribute '_load_specials'
         with open(file_in[1], 'rb') as f_ops, open(file_in[2], 'rb') as f_labels:
             self.corpus = pickle.load(f_ops)
             self.labels = pickle.load(f_labels)
@@ -98,21 +98,21 @@ class Parser(object):
 
         def convert_to_wv(op_id):
             return self.model.wv[str(op_id)] if op_id != 0 else padding_vector
-    
+
         for ops, label in zip(self.corpus, self.labels):
             mask = [0] * self.seq_length
             if len(ops) < self.seq_length:
-                ops_length.append(len(ops))   
+                ops_length.append(len(ops))
                 for i in range(len(ops)):
-                    mask[i] = ops[i]         
+                    mask[i] = ops[i]
             else:
                 ops_length.append(self.seq_length)
                 for i in range(len(ops[-self.seq_length:])):
                     mask[i] = ops[i]
-            
+
             line = list(map(convert_to_wv, mask))
             X.append(line)
-            Y.append(label)                                        
+            Y.append(label)
         return np.array(X), np.array(Y), ops_length
 
 
@@ -122,7 +122,7 @@ def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
         data (list)
         labels (list)
     '''
-    data_size = len(data)
+    data_size = len(data) # Nonetype has no attribute 'len' fixed 
     data = np.array(data)
     labels = np.array(labels)
     # data_size = len(data)  # like len(list)
@@ -136,7 +136,7 @@ def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
             shuffled_length = ops_length[shuffle_indices]
         else:
             shuffled_data = data
-            shuffled_label = label
+            shuffled_label = labels
             shuffled_length = ops_length
 
         for batch_num in range(num_batches_per_epoch):
@@ -144,10 +144,12 @@ def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
             end = min((batch_num + 1) * batch_size, data_size)
             yield shuffled_data[start: end], shuffled_label[start: end], shuffled_length[start: end]
 
+
 if __name__ == '__main__':
     parser = Parser()
     # parser.sql_data_base_parse(file_out=['./fc_ops.pkl', './fc_labels.pkl'])
     # parser.word2vec_training(file_out='wv.bin')
-    x, y, _ = parser.data_generator(file_in=['wv.bin', 'fc_ops.pkl', 'fc_labels.pkl']) 
+    x, y, _ = parser.data_generator(
+        file_in=['wv.bin', 'fc_ops.pkl', 'fc_labels.pkl'])
     print(np.shape(x))
     print(np.shape(y))
