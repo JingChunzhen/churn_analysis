@@ -17,8 +17,7 @@ class Parser(object):
         self.corpus = []
         self.labels = []
         self.action_id = {}
-        self.embedding_size = embedding_size
-        self.seq_length = None
+        self.embedding_size = embedding_size        
         self.model = None
         self.regx = re.compile(r'board_layer/board.*?')
         self.seq_length = seq_length
@@ -130,10 +129,11 @@ def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
 
     for epoch in range(epochs):
         if shuffle:
-            shuffle_indices = np.random.permutation(np.range(data_size))
+            shuffle_indices = np.random.permutation(np.arange(data_size))
             shuffled_data = data[shuffle_indices]
             shuffled_label = labels[shuffle_indices]
-            shuffled_length = ops_length[shuffle_indices]
+            #shuffled_length = ops_length[shuffle_indices]
+            shuffled_length = [ops_length[i] for i in shuffle_indices]
         else:
             shuffled_data = data
             shuffled_label = labels
@@ -144,12 +144,3 @@ def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
             end = min((batch_num + 1) * batch_size, data_size)
             yield shuffled_data[start: end], shuffled_label[start: end], shuffled_length[start: end]
 
-
-if __name__ == '__main__':
-    parser = Parser()
-    # parser.sql_data_base_parse(file_out=['./fc_ops.pkl', './fc_labels.pkl'])
-    # parser.word2vec_training(file_out='wv.bin')
-    x, y, _ = parser.data_generator(
-        file_in=['wv.bin', 'fc_ops.pkl', 'fc_labels.pkl'])
-    print(np.shape(x))
-    print(np.shape(y))

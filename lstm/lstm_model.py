@@ -13,38 +13,39 @@ class LSTM(object):
     def __init__(self, embedding_size=50, seq_max_length=100, learning_rate=0.01, l2_reg=0.0, n_hidden_lstm=100):
         self.embedding_size = embedding_size
         self.seq_max_length = seq_max_length
-        self.learning_rate = None
-        self.l2_reg = None
+        self.learning_rate = learning_rate
+        self.l2_reg = l2_reg
         self.n_hidden_lstm = n_hidden_lstm
         self.W = {
             'wf': tf.Variable(tf.random_normal([self.n_hidden_lstm, 2]))
         }
         self.B = {
             'bf': tf.Variable(tf.random_normal([2]))
-        }
-        self.n_hidden_lstm = None
+        }        
         self.X = tf.placeholder(dtype='float', shape=[
                                 None, self.seq_max_length, self.embedding_size])
         self.Y = tf.placeholder(dtype='float', shape=[None, 2])
         self.seq_lengths = tf.placeholder(dtype=tf.int32, shape=[None])
 
-    def dynamic_rnn(self, x, seqlen):
-        x = tf.unstack(x, axis=1)
+    
+    def dynamic_rnn(self):        
+        x = tf.unstack(self.X, self.seq_max_length, axis=1)
+        
         # batch_size, seq_max_length, embedding_size -> seq_max_length, batch_size, embedding_size
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_lstm)
-        outputs, states = tf.contrib.rnn.static_rnn(lstm_cell, x, dtype=tf.float32,   # TODO bug here 
-                                                    sequence_length=seqlen)
+        outputs, states = tf.contrib.rnn.static_rnn(lstm_cell, x, dtype=tf.float32,  
+                                                    sequence_length=self.seq_lengths)                 
 
         outputs = tf.stack(outputs)
         outputs = tf.transpose(outputs, [1, 0, 2])
         batch_size = tf.shape(outputs)[0]
-        index = tf.range(0, batch_size) * self.seq_max_length + (seqlen - 1)
+        index = tf.range(0, batch_size) * self.seq_max_length + (self.seq_lengths - 1)
         outputs = tf.gather(tf.reshape(
             outputs, [-1, self.n_hidden_lstm]), index)
         return tf.add(tf.matmul(outputs, self.W['wf']), self.B['bf'])
 
     def train(self, x, y, seqlen):
-        pred = self.dynamic_rnn(self.X, self.seq_lengths)
+        pred = self.dynamic_rnn()
         loss_op = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits=pred, labels=tf.cast(self.Y, tf.int32)))
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
@@ -54,11 +55,11 @@ class LSTM(object):
             tf.argmax(pred, 1), tf.argmax(self.Y, 1))
         accuracy_op = tf.reduce_mean(
             tf.cast(correct_predictions, "float"), name="accuracy")
-        init = tf.global_variables_initializer()
+        init = tf.global_variables_initializer()  # 不应该在每一个动作之前都进行init
         with tf.Session() as sess:
-            sess.run(init)
-            sess.run(
-                _, loss, acc=[train_op, loss_op, accuracy_op],
+            sess.run(init)   
+            _, loss, acc = sess.run(
+                [train_op, loss_op, accuracy_op],
                 feed_dict={
                     self.X: x,
                     self.Y: y,
@@ -137,6 +138,7 @@ class METRIC(object):
             self.X_test, self.Y_test, self.ops_length_test)
         print('evaluation final accuracy is {}'.format(acc_test))
 
+    
 if __name__ == '__main__':
     metric = METRIC()
     metric.data_split()
