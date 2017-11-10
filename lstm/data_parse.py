@@ -5,22 +5,34 @@ import sqlite3
 import numpy as np
 import tensorflow as tf
 from gensim.models import word2vec
-
+from sklearn.cross_validation import train_test_split
 
 class Parser(object):
     '''
     store the configure infos using yaml
     '''
 
-    def __init__(self, sql_in='../data/kbzy.db', embedding_size=50, seq_length=100):
+    def __init__(self, sql_in='../data/kbzy.db', embedding_size=50, seq_length=100, test_size=0.2, validate_size=0.1):
         self.sql_in = sql_in
         self.corpus = []
         self.labels = []
         self.action_id = {}
-        self.embedding_size = embedding_size        
+        self.embedding_size = embedding_size
         self.model = None
         self.regx = re.compile(r'board_layer/board.*?')
         self.seq_length = seq_length
+
+        self.X_train = None
+        self.X_test = None
+        self.X_validate = None
+        self.Y_train = None
+        self.Y_test = None
+        self.Y_validate = None
+        self.ops_length_train = None
+        self.ops_length_test = None
+        self.ops_length_validate = None
+        self.test_size = test_size
+        self.validate_size = validate_size
 
     def sql_data_base_parse(self, *file_out, day=1):
         '''
@@ -58,7 +70,7 @@ class Parser(object):
                 label = [0, 1] if num_days_played == day else [1, 0]
                 self.labels.append(label)
                 self.corpus.append(ops)
-                ops = []
+                ops = [self.action_id[action]]
             else:
                 ops.append(self.action_id[action])
             previous_userid = user_id
@@ -88,7 +100,8 @@ class Parser(object):
         ops_length = []
         X = []
         Y = []
-        self.model = word2vec.Word2Vec.load(file_in[0]) # 'list' object has no attribute '_load_specials'
+        # 'list' object has no attribute '_load_specials'
+        self.model = word2vec.Word2Vec.load(file_in[0])
         with open(file_in[1], 'rb') as f_ops, open(file_in[2], 'rb') as f_labels:
             self.corpus = pickle.load(f_ops)
             self.labels = pickle.load(f_labels)
@@ -114,6 +127,14 @@ class Parser(object):
             Y.append(label)
         return np.array(X), np.array(Y), ops_length
 
+    def data_split(self):
+        X, Y, ops_length = self.data_generator(
+            'wv.bin', 'fc_ops.pkl', 'fc_labels.pkl')
+        X_train, self.X_test, Y_train, self.Y_test, ops_length_train, self.ops_length_test = train_test_split(
+            X, Y, ops_length, test_size=self.test_size)
+        self.X_train, self.X_validate, self.Y_train, self.Y_validate, self.ops_length_train, self.ops_length_validate = train_test_split(
+            X_train, Y_train, ops_length_train, test_size=self.validate_size)
+
 
 def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
     '''
@@ -121,7 +142,7 @@ def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
         data (list)
         labels (list)
     '''
-    data_size = len(data) # Nonetype has no attribute 'len' fixed 
+    data_size = len(data)  
     data = np.array(data)
     labels = np.array(labels)
     # data_size = len(data)  # like len(list)
@@ -144,3 +165,8 @@ def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
             end = min((batch_num + 1) * batch_size, data_size)
             yield shuffled_data[start: end], shuffled_label[start: end], shuffled_length[start: end]
 
+if __name__ == '__main__':
+    parse = Parser()
+    parse.sql_data_base_parse('fc_ops.pkl', 'fc_labels.pkl')
+    parse.word2vec_training('wv.bin')
+    
