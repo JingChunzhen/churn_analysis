@@ -1,8 +1,10 @@
 import tensorflow as tf
 import numpy as np
 import sklearn
-from data_parse import Parser, batch_iter
 
+import sys
+sys.path.append('..')
+from utils.data_parse import Parser, batch_iter
 
 
 class Dynamic_LSTM(object):
@@ -29,7 +31,8 @@ class Dynamic_LSTM(object):
 
     def dynamic_rnn(self):
         x = tf.unstack(self.X, self.seq_max_length, axis=1)
-        # batch_size, seq_max_length, embedding_size -> seq_max_length, batch_size, embedding_size
+        # batch_size, seq_max_length, embedding_size -> seq_max_length,
+        # batch_size, embedding_size
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_lstm)
         outputs, states = tf.contrib.rnn.static_rnn(lstm_cell, x, dtype=tf.float32,
                                                     sequence_length=self.seq_lengths)
@@ -38,9 +41,9 @@ class Dynamic_LSTM(object):
         outputs = tf.transpose(outputs, [1, 0, 2])
         batch_size = tf.shape(outputs)[0]
         index = tf.range(0, batch_size) * \
-            self.seq_max_length + (self.seq_lengths - 1)        
+            self.seq_max_length + (self.seq_lengths - 1)
         outputs = tf.gather(tf.reshape(
-            outputs, [-1, self.n_hidden_lstm]), index) 
+            outputs, [-1, self.n_hidden_lstm]), index)
         return tf.add(tf.matmul(outputs, self.W['wf']), self.B['bf'])
 
     def train(self, batch_size, epochs):
@@ -54,11 +57,11 @@ class Dynamic_LSTM(object):
             tf.argmax(pred, 1), tf.argmax(self.Y, 1))
         accuracy_op = tf.reduce_mean(
             tf.cast(correct_predictions, "float"), name="accuracy")
-        init = tf.global_variables_initializer()  
+        init = tf.global_variables_initializer()
 
         with tf.Session() as sess:
             sess.run(init)
-            
+
             def step(batch_x, batch_y, batch_seqlen):
                 '''
                 single step in training, valitdation and test 
@@ -86,23 +89,29 @@ class Dynamic_LSTM(object):
                     losses.append(loss)
                     acces.append(acc)
                 return np.mean(losses), np.mean(acces)
-            
+
             i = 0
             for x, y, seqlen in batch_iter(parse.X_train, parse.Y_train, parse.ops_length_train, batch_size, epochs, True):
                 print('entering training...')
-                loss, acc = step(x, y, seqlen) 
-                print('training log info: loss and acc {:.4f}， {:.4f}'.format(loss, acc))
-                i += 1 
+                loss, acc = step(x, y, seqlen)
+                print(
+                    'training log info: loss and acc {:.4f}， {:.4f}'.format(loss, acc))
+                i += 1
                 if i % 10 == 0:
-                    # actually this is not true validation, it is still training 
-                    loss, acc = evaluate(parse.X_validate, parse.Y_validate, parse.ops_length_validate)
-                    print('validation log info: loss and acc {:.4f} {:.4f}'.format(loss, acc))
+                    # actually this is not true validation, it is still
+                    # training
+                    loss, acc = evaluate(
+                        parse.X_validate, parse.Y_validate, parse.ops_length_validate)
+                    print(
+                        'validation log info: loss and acc {:.4f} {:.4f}'.format(loss, acc))
 
-            loss, acc = evaluate(parse.X_test, parse.Y_test, parse.ops_length_test)
-            print('test log info: loss and acc {:.2f} {:.2f}'.format(loss, acc))
+            loss, acc = evaluate(
+                parse.X_test, parse.Y_test, parse.ops_length_test)
+            print(
+                'test log info: loss and acc {:.2f} {:.2f}'.format(loss, acc))
+
 
 if __name__ == '__main__':
     d_lstm = Dynamic_LSTM()
     d_lstm.train(128, 20)
     pass
-
