@@ -6,20 +6,16 @@ import sys
 sys.path.append('..')
 from utils.data_parse import Parser, batch_iter
 
-
-class Dynamic_LSTM(object):
+class Bi_LSTM(object):
     '''
-    churn predict using dynamic LSTM
     '''
-
-    def __init__(self, embedding_size=50, seq_max_length=100, l2_reg=0.0, n_hidden_lstm=100):
+    def __init__(self, embedding_size=50, seq_max_length=100, n_hidden_lstm=100, l2_reg=0.0):
         self.embedding_size = embedding_size
-        self.seq_max_length = seq_max_length
-        self.learning_rate = learning_rate
+        self.seq_max_length = seq_max_length        
         self.l2_reg = l2_reg
         self.n_hidden_lstm = n_hidden_lstm
         self.W = {
-            'wf': tf.Variable(tf.random_normal([self.n_hidden_lstm, 2]))
+            'wf': tf.Variable(tf.random_normal([2 * self.n_hidden_lstm, 2]))
         }
         self.B = {
             'bf': tf.Variable(tf.random_normal([2]))
@@ -27,27 +23,23 @@ class Dynamic_LSTM(object):
         self.X = tf.placeholder(dtype='float', shape=[
                                 None, self.seq_max_length, self.embedding_size])
         self.Y = tf.placeholder(dtype='float', shape=[None, 2])
-        self.seq_lengths = tf.placeholder(dtype=tf.int32, shape=[None])
-
-    def dynamic_rnn(self):
+        self.seq_lengths = tf.placeholder(dtype=tf.int32, shape=[None])        
+    
+    def process(self):
+        '''
+        '''
         x = tf.unstack(self.X, self.seq_max_length, axis=1)
-        # batch_size, seq_max_length, embedding_size -> seq_max_length,
-        # batch_size, embedding_size
-        lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_lstm)
-        outputs, states = tf.contrib.rnn.static_rnn(lstm_cell, x, dtype=tf.float32,
-                                                    sequence_length=self.seq_lengths)
-
-        outputs = tf.stack(outputs)
-        outputs = tf.transpose(outputs, [1, 0, 2])
-        batch_size = tf.shape(outputs)[0]
-        index = tf.range(0, batch_size) * \
-            self.seq_max_length + (self.seq_lengths - 1)
-        outputs = tf.gather(tf.reshape(
-            outputs, [-1, self.n_hidden_lstm]), index)
-        return tf.add(tf.matmul(outputs, self.W['wf']), self.B['bf'])
-
-    def train(self, batch_size, epochs, learning_rate):
-        pred = self.dynamic_rnn()
+        fw_lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_lstm, forget_bias=1.0)
+        bw_lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_lstm, forget_bias=1.0)
+        outputs, _, _ = tf.contrib.rnn.static_bidirectional_rnn(fw_lstm_cell, bw_lstm_cell, x, dtype=tf.float32)
+        print(outputs)
+        return tf.add(tf.matmul(outputs[-1], self.W['wf']), self.B['bf'])
+        pass
+    
+    def train(self, batch_size=100, epochs=2, learning_rate=0.01):
+        '''
+        '''
+        pred = self.process()
         loss_op = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits=pred, labels=tf.cast(self.Y, tf.int32)))
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
@@ -62,14 +54,13 @@ class Dynamic_LSTM(object):
         with tf.Session() as sess:
             sess.run(init)
 
-            def step(batch_x, batch_y, batch_seqlen):
+            def step(batch_x, batch_y):
                 '''
                 single step in training, valitdation and test 
                 '''
                 feed_dict = {
                     self.X: batch_x,
-                    self.Y: batch_y,
-                    self.seq_lengths: batch_seqlen
+                    self.Y: batch_y
                 }
                 _, loss, acc = sess.run(
                     [train_op, loss_op, accuracy_op], feed_dict=feed_dict)
@@ -84,16 +75,16 @@ class Dynamic_LSTM(object):
                 '''
                 losses = []
                 acces = []
-                for x, y, seqlen in batch_iter(X_eval, Y_eval, ops_length_eval, batch_size, 1, False):
-                    loss, acc = step(x, y, seqlen)
+                for x, y, _ in batch_iter(X_eval, Y_eval, ops_length_eval, batch_size, 1, False):
+                    loss, acc = step(x, y)
                     losses.append(loss)
                     acces.append(acc)
                 return np.mean(losses), np.mean(acces)
 
             i = 0
-            for x, y, seqlen in batch_iter(parse.X_train, parse.Y_train, parse.ops_length_train, batch_size, epochs, True):
+            for x, y, _ in batch_iter(parse.X_train, parse.Y_train, parse.ops_length_train, batch_size, epochs, True):
                 print('entering training...')
-                loss, acc = step(x, y, seqlen)
+                loss, acc = step(x, y)
                 print(
                     'training log info: loss and acc {:.4f}， {:.4f}'.format(loss, acc))
                 i += 1
@@ -109,9 +100,9 @@ class Dynamic_LSTM(object):
                 parse.X_test, parse.Y_test, parse.ops_length_test)
             print(
                 'test log info: loss and acc {:.2f} {:.2f}'.format(loss, acc))
-
+        pass
+    pass
 
 if __name__ == '__main__':
-    d_lstm = Dynamic_LSTM()
-    d_lstm.train(128, 20, 0.001)
-    pass
+    blstm = Bi_LSTM()
+    blstm.train()    
