@@ -5,7 +5,7 @@ import sqlite3
 import numpy as np
 import tensorflow as tf
 from gensim.models import word2vec
-from sklearn.cross_validation import train_test_split
+from sklearn.model_selection import train_test_split
 
 class Parser(object):
     '''
@@ -125,26 +125,48 @@ class Parser(object):
             line = list(map(convert_to_wv, mask))
             X.append(line)
             Y.append(label)
-        return np.array(X), np.array(Y), ops_length
+        #return np.array(X), np.array(Y), ops_length
+        return X, Y, ops_length
 
     def data_split(self):
+        '''        
+        reference: https://stackoverflow.com/questions/31467487
+        '''
         X, Y, ops_length = self.data_generator(
-            'wv.bin', 'fc_ops.pkl', 'fc_labels.pkl')
-        X_train, self.X_test, Y_train, self.Y_test, ops_length_train, self.ops_length_test = train_test_split(
-            X, Y, ops_length, test_size=self.test_size)
-        self.X_train, self.X_validate, self.Y_train, self.Y_validate, self.ops_length_train, self.ops_length_validate = train_test_split(
-            X_train, Y_train, ops_length_train, test_size=self.validate_size)
+            '../temp/wv.bin', '../temp/fc_ops.pkl', '../temp/fc_labels.pkl')
+        # print(np.shape(X))
+        # print(np.shape(Y))
+        # print(np.shape(ops_length))
+        length = len(X)
+        validate_indice =  int(length - (self.validate_size + self.test_size) * length)
+        test_indice = int(length - self.validate_size * length)
+        self.X_train = X[:validate_indice]
+        self.Y_train = Y[:validate_indice]
+        self.ops_length_train = ops_length[:validate_indice]                       
+        self.X_validate = X[validate_indice:test_indice]
+        self.Y_validate = Y[validate_indice:test_indice]
+        self.ops_length_validate = ops_length[validate_indice:test_indice]        
+        self.X_test = X[test_indice:]
+        self.Y_test = Y[test_indice:]
+        self.ops_length_test = ops_length[test_indice:]        
+
+        # use train_test_split may cause Memory Error
+        # X_train, self.X_test, Y_train, self.Y_test, ops_length_train, self.ops_length_test = train_test_split(
+        #     X, Y, ops_length, test_size=self.test_size)
+        # self.X_train, self.X_validate, self.Y_train, self.Y_validate, self.ops_length_train, self.ops_length_validate = train_test_split(
+        #     X_train, Y_train, ops_length_train, test_size=self.validate_size)
 
 
 def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
     '''
+    Use random.shuffle instead 
     Args:
         data (list)
         labels (list)
     '''
     data_size = len(data)  
-    data = np.array(data)
-    labels = np.array(labels)
+    # data = np.array(data)
+    # labels = np.array(labels)
     # data_size = len(data)  # like len(list)
     num_batches_per_epoch = int(len(data) / batch_size)
 
@@ -167,6 +189,6 @@ def batch_iter(data, labels, ops_length, batch_size, epochs, shuffle):
 
 if __name__ == '__main__':
     parse = Parser()
-    parse.sql_data_base_parse('fc_ops.pkl', 'fc_labels.pkl')
-    parse.word2vec_training('wv.bin')
+    parse.sql_data_base_parse('../temp/fc_ops.pkl', '../temp/fc_labels.pkl')
+    parse.word2vec_training('../temp/wv.bin')
     

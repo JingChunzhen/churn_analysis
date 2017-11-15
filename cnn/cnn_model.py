@@ -32,18 +32,18 @@ class CNN(object):
         # weights shape: filter_height, filter_width, channel_in, out_channels
         # try longer filter
         self.W = {
-            'w_2': tf.Variable(tf.random_normal([2, self.embedding_size, 1, self.out_channels])),
-            'w_3': tf.Variable(tf.random_normal([5, self.embedding_size, 1, self.out_channels])),
-            'w_5': tf.Variable(tf.random_normal([10, self.embedding_size, 1, self.out_channels])),
-            'wf_1': tf.Variable(tf.random_normal([3 * self.out_channels, 128])),
+            'w_2': tf.Variable(tf.random_normal([2, self.embedding_size, 1, self.out_channels]), trainable=self.is_training),
+            'w_3': tf.Variable(tf.random_normal([5, self.embedding_size, 1, self.out_channels]), trainable=self.is_training),
+            'w_5': tf.Variable(tf.random_normal([10, self.embedding_size, 1, self.out_channels]), trainable=self.is_training),
+            'wf_1': tf.Variable(tf.random_normal([3 * self.out_channels, 128]), trainable=self.is_training),
             'wf_2': tf.Variable(tf.random_normal([128, 2]))
         }
         self.B = {
-            'b_2': tf.Variable(tf.random_normal([self.out_channels])),
-            'b_3': tf.Variable(tf.random_normal([self.out_channels])),
-            'b_5': tf.Variable(tf.random_normal([self.out_channels])),
-            'bf_1': tf.Variable(tf.random_normal([128])),
-            'bf_2': tf.Variable(tf.random_normal([2]))
+            'b_2': tf.Variable(tf.random_normal([self.out_channels]), trainable=self.is_training),
+            'b_3': tf.Variable(tf.random_normal([self.out_channels]), trainable=self.is_training),
+            'b_5': tf.Variable(tf.random_normal([self.out_channels]), trainable=self.is_training),
+            'bf_1': tf.Variable(tf.random_normal([128]), trainable=self.is_training),
+            'bf_2': tf.Variable(tf.random_normal([2]), trainable=self.is_training)
         }
         # split the X into training, validation, test data
         # input x shape: (batch size, sequence length, embedding size)
@@ -153,16 +153,14 @@ class CNN(object):
                 return np.mean(losses), np.mean(acces)
 
             i = 0
-            for x, y, _ in batch_iter(parse.X_train, parse.Y_train, parse.ops_length_train, batch_size, epochs, True):
+            for x, y, _ in batch_iter(parse.X_train, parse.Y_train, parse.ops_length_train, batch_size, epochs, False):
                 print('entering training...')
                 self.is_training = True
                 loss, acc = step(x, y)
                 print(
                     'training log info: loss and acc {:.4f}， {:.4f}'.format(loss, acc))
                 i += 1
-                if i % 10 == 0:
-                    # actually this is not true validation, it is still
-                    # training
+                if i % 10 == 0:                    
                     loss, acc = evaluate(
                         parse.X_validate, parse.Y_validate, parse.ops_length_validate)
                     print(

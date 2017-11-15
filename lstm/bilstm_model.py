@@ -14,11 +14,13 @@ class Bi_LSTM(object):
         self.seq_max_length = seq_max_length        
         self.l2_reg = l2_reg
         self.n_hidden_lstm = n_hidden_lstm
+        self.is_training = True
+        n = 2 * self.n_hidden_lstm * self.seq_max_length
         self.W = {
-            'wf': tf.Variable(tf.random_normal([2 * self.n_hidden_lstm, 2]))
+            'wf': tf.Variable(tf.random_normal([n, 2]), trainable=self.is_training)
         }
         self.B = {
-            'bf': tf.Variable(tf.random_normal([2]))
+            'bf': tf.Variable(tf.random_normal([2]), trainable=self.is_training)
         }
         self.X = tf.placeholder(dtype='float', shape=[
                                 None, self.seq_max_length, self.embedding_size])
@@ -32,11 +34,12 @@ class Bi_LSTM(object):
         fw_lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_lstm, forget_bias=1.0)
         bw_lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_lstm, forget_bias=1.0)
         outputs, _, _ = tf.contrib.rnn.static_bidirectional_rnn(fw_lstm_cell, bw_lstm_cell, x, dtype=tf.float32)
-        print(outputs)
-        return tf.add(tf.matmul(outputs[-1], self.W['wf']), self.B['bf'])
+        outputs = tf.concat(axis=1, values=outputs)        
+        print(tf.shape(outputs))
+        return tf.add(tf.matmul(outputs, self.W['wf']), self.B['bf'])
         pass
     
-    def train(self, batch_size=100, epochs=2, learning_rate=0.01):
+    def train(self, batch_size=100, epochs=2, learning_rate=0.001):
         '''
         '''
         pred = self.process()
@@ -53,7 +56,7 @@ class Bi_LSTM(object):
 
         with tf.Session() as sess:
             sess.run(init)
-
+            
             def step(batch_x, batch_y):
                 '''
                 single step in training, valitdation and test 
@@ -72,29 +75,31 @@ class Bi_LSTM(object):
             def evaluate(X_eval, Y_eval, ops_length_eval):
                 '''
                 evaluate in test and validation 
-                '''
+                '''                
                 losses = []
                 acces = []
                 for x, y, _ in batch_iter(X_eval, Y_eval, ops_length_eval, batch_size, 1, False):
-                    loss, acc = step(x, y)
+                    feed_dict = {
+                        self.X: X_eval,
+                        self.Y: Y_eval
+                    }
+                    loss, acc = sess.run([loss_op, accuracy_op], feed_dict=feed_dict)
                     losses.append(loss)
                     acces.append(acc)
                 return np.mean(losses), np.mean(acces)
 
             i = 0
-            for x, y, _ in batch_iter(parse.X_train, parse.Y_train, parse.ops_length_train, batch_size, epochs, True):
-                print('entering training...')
+            for x, y, _ in batch_iter(parse.X_train, parse.Y_train, parse.ops_length_train, batch_size, epochs, False):
+                print('entering training...')                
                 loss, acc = step(x, y)
                 print(
                     'training log info: loss and acc {:.4f}， {:.4f}'.format(loss, acc))
                 i += 1
-                if i % 10 == 0:
-                    # actually this is not true validation, it is still
-                    # training
-                    loss, acc = evaluate(
-                        parse.X_validate, parse.Y_validate, parse.ops_length_validate)
-                    print(
-                        'validation log info: loss and acc {:.4f} {:.4f}'.format(loss, acc))
+                # if i % 10 == 0:                    
+                #     loss, acc = evaluate(
+                #         parse.X_validate, parse.Y_validate, parse.ops_length_validate)
+                #     print(
+                #         'validation log info: loss and acc {:.4f} {:.4f}'.format(loss, acc))
 
             loss, acc = evaluate(
                 parse.X_test, parse.Y_test, parse.ops_length_test)
